@@ -1,0 +1,32 @@
+inspectit:
+
+  metrics:
+    enabled: false
+
+  instrumentation:
+    scopes:
+      fibonacci_scope:
+        type: {name: net.explorviz.sampleApplication.application.math.Fibonacci}
+        methods:
+          - name: calculate
+
+    rules:
+      trace_fibonacci:
+        scopes:
+          fibonacci_scope: true
+        tracing:
+            start-span: true
+            attributes:
+              input: _arg0
+              result: _returnValue
+
+  logging:
+    debug: true
+    trace: false
+
+  exporters:
+    tracing:
+      open-census-agent:
+        address: "localhost:55678"
+        service-name: "Alex sein Test - OpenCensus"
+        use-insecure: true

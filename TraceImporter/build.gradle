@@ -1,0 +1,20 @@
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    jcenter()
+}
+
+dependencies {
+    implementation group: 'org.apache.kafka', name: 'kafka_2.12', version: '2.2.0'
+    
+    implementation group: 'io.opencensus', name: 'opencensus-api', version: '0.15.0'
+    implementation group: 'io.opencensus', name: 'opencensus-impl', version: '0.15.0'
+    
+    implementation group: 'org.slf4j', name: 'slf4j-simple', version: '1.6.1'
+    
+    implementation group: 'com.github.daniel-shuy', name: 'kafka-protobuf-serde', version: '2.2.0'
+
+    testImplementation 'junit:junit:4.12'
+}
