@@ -2,8 +2,6 @@ receivers:
   opencensus:
     address: ":55678"
     reconnection-delay: 2s
-  jaeger:
-    collector_http_port: 14268
 
 exporters:
   opencensus:
