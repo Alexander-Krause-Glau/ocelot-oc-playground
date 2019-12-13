@@ -21,12 +21,16 @@ inspectit:
               result: _returnValue
               host: host_name_attr
               method_fqn: method_fqn_attr
+              application_name: appname_attr
         entry:
           host_name_attr:
            action: get_host_name
           method_fqn_attr:
             action: get_method_fqn
-
+          appname_attr:
+            action: set
+            constant-input:
+              value: "UNKNOWN-APPLICATION"
 
     actions:
 

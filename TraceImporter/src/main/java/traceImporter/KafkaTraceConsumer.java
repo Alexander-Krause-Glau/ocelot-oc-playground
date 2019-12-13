@@ -6,6 +6,7 @@ import io.opencensus.proto.trace.v1.AttributeValue;
 import io.opencensus.proto.trace.v1.Span;
 import io.opencensus.proto.trace.v1.TraceProto;
 import io.opencensus.trace.SpanBuilder;
+import io.opencensus.trace.SpanContext;
 import io.opencensus.trace.SpanId;
 
 import java.io.UnsupportedEncodingException;
@@ -76,8 +77,6 @@ public class KafkaTraceConsumer implements Runnable {
                     System.out.printf("Spans: %d\n", s.getSpansCount());
 
                     System.out.printf("Span 0 of bundle:\n%s\n\n", SpanToString(s.getSpans(0)));
-
-
 
                 } catch (InvalidProtocolBufferException | UnsupportedEncodingException e) {
                     e.printStackTrace();
