@@ -64,7 +64,7 @@ public class KafkaTraceConsumer implements Runnable {
 
             for (final ConsumerRecord<byte[], byte[]> record : records) {
 
-                System.out.println("KEY: " + Arrays.toString(record.key()));
+                System.out.println("KEY: " + Base64.getEncoder().encodeToString(record.key()));
                 // LOGGER.info("Recevied Kafka record: {}", record.value());
 
                 final byte[] serializedTrace = record.value();
@@ -77,9 +77,7 @@ public class KafkaTraceConsumer implements Runnable {
 
                     System.out.printf("Span 0 of bundle:\n%s\n\n", SpanToString(s.getSpans(0)));
 
-                    for (Map.Entry<String, AttributeValue> entry: s.getSpans(0).getAttributes().getAttributeMapMap().entrySet()) {
-                        System.out.printf("%s -> %s\n", entry.getKey(), entry.getValue().getStringValue());
-                    }
+
 
                 } catch (InvalidProtocolBufferException | UnsupportedEncodingException e) {
                     e.printStackTrace();
@@ -103,6 +101,11 @@ public class KafkaTraceConsumer implements Runnable {
         sb.append("\tname: ").append(s.getName().getValue()).append("\n");
         sb.append("\tStart (seconds): ").append(s.getStartTime().getSeconds()).append("\n");
         sb.append("\tEnd (seconds): ").append(s.getEndTime().getSeconds()).append("\n");
+        sb.append("\tAttributes{\n");
+        for (Map.Entry<String, AttributeValue> entry: s.getAttributes().getAttributeMapMap().entrySet()) {
+            sb.append("\t\t").append(entry.getKey()).append(" -> ").append(entry.getValue().getStringValue());
+        }
+        sb.append("\t}\n");
 
 
         sb.append("}\n");

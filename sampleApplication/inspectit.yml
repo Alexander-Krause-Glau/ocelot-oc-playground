@@ -8,9 +8,7 @@ inspectit:
   instrumentation:
     scopes:
       fibonacci_scope:
-        type: {name: net.explorviz.sampleApplication.application.math.Fibonacci}
-        methods:
-          - name: calculate
+        type: {name: net.explorviz.sampleApplication, matcher-mode: STARTS_WITH_IGNORE_CASE}
 
     rules:
       trace_fibonacci:
@@ -22,19 +20,29 @@ inspectit:
               input: _arg0
               result: _returnValue
               host: host_name_attr
+              method_fqn: method_fqn_attr
         entry:
           host_name_attr:
-           action: host_name
+           action: get_host_name
+          method_fqn_attr:
+            action: get_method_fqn
+
 
     actions:
 
       #computes a nanosecond-timestamp as a long for the current point in time
-      host_name:
+      get_host_name:
         imports:
           - java.net.InetAddress
         value-body: |
           InetAddress ip = InetAddress.getLocalHost();
           return ip.getHostName();
+
+      get_method_fqn:
+        input:
+          _methodName: String
+          _class: Class
+        value: "new StringBuilder(_class.getName()).append('.').append(_methodName).toString()"
 
   logging:
     debug: true
