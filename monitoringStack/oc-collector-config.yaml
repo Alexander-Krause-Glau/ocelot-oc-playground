@@ -2,10 +2,7 @@ receivers:
   opencensus:
     port: 55678
 
-exporters:
-  zipkin:
-    endpoint: "http://zipkin-all-in-one:9411/api/v2/spans"
-  
+exporters:  
   kafka:
     brokers: ["kafka:9092"]
     topic: "cluster-spans"
