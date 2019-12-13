@@ -26,4 +26,26 @@ services:
       - "14268"
       - "55678:55678"
       - "55679:55679"
-    network_mode: "host"
+    depends_on:
+      - oc-collector
+
+  zookeeper:
+    container_name: zookeeper
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
+
+  kafka:
+    container_name: kafka
+    image: wurstmeister/kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9091:9091"
+    environment:
+      KAFKA_LISTENERS: OUTSIDE://:9091,INSIDE://kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: OUTSIDE://localhost:9091,INSIDE://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CREATE_TOPICS: "cluster-spans:1:1" 

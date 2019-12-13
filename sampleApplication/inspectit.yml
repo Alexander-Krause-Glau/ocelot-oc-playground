@@ -1,3 +1,5 @@
+# https://inspectit.github.io/inspectit-ocelot/docs/instrumentation/rules#actions
+
 inspectit:
 
   metrics:
@@ -19,6 +21,20 @@ inspectit:
             attributes:
               input: _arg0
               result: _returnValue
+              host: host_name_attr
+        entry:
+          host_name_attr:
+           action: host_name
+
+    actions:
+
+      #computes a nanosecond-timestamp as a long for the current point in time
+      host_name:
+        imports:
+          - java.net.InetAddress
+        value-body: |
+          InetAddress ip = InetAddress.getLocalHost();
+          return ip.getHostName();
 
   logging:
     debug: true

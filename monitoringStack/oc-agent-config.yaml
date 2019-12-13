@@ -5,4 +5,4 @@ receivers:
 
 exporters:
   opencensus:
-    endpoint: "localhost:12334"
+    endpoint: "oc-collector:55678"
