@@ -1,43 +1,43 @@
 package traceImporter;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import io.opencensus.proto.dump.DumpSpans;
 import io.opencensus.proto.trace.v1.AttributeValue;
 import io.opencensus.proto.trace.v1.Span;
-import io.opencensus.proto.trace.v1.TraceProto;
-import io.opencensus.trace.SpanBuilder;
-import io.opencensus.trace.SpanContext;
-import io.opencensus.trace.SpanId;
-
-import java.io.UnsupportedEncodingException;
-import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
-import java.time.Duration;
-import java.util.*;
-
-import io.opencensus.trace.export.SpanData;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import io.opencensus.proto.agent.trace.v1.TraceServiceGrpc.TraceServiceStub;
 
-import java.nio.ByteBuffer;
+import java.io.UnsupportedEncodingException;
 import java.time.Duration;
-import java.util.Arrays;
-import java.util.Properties;
+import java.util.*;
 
-public class KafkaTraceConsumer implements Runnable {
+/**
+ * Retrives {@link DumpSpans} objects from the "cluster-dump-spans" topic
+ */
+public class KafkaDumpSpanConsumer implements Runnable {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(KafkaTraceConsumer.class);
-    private static final String KAFKA_TOPIC = "cluster-spans";
+    public interface DumpSpanHandler {
+        void handle(DumpSpans dumpSpans);
+    }
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(KafkaDumpSpanConsumer.class);
+    private static final String KAFKA_TOPIC = "cluster-dump-spans";
 
     private final KafkaConsumer<byte[], byte[]> kafkaConsumer;
+    private DumpSpanHandler handler;
 
 
-    public KafkaTraceConsumer() {
+
+    public KafkaDumpSpanConsumer() {
+        this(ds -> System.out.println("First Span in dump: \n" + SpanToString(ds.getSpans(0))));
+
+    }
+
+    public KafkaDumpSpanConsumer(DumpSpanHandler handler) {
 
         final Properties properties = new Properties();
         properties.put("bootstrap.servers", "localhost:9091");
@@ -50,6 +50,8 @@ public class KafkaTraceConsumer implements Runnable {
             "org.apache.kafka.common.serialization.ByteArrayDeserializer");
 
         this.kafkaConsumer = new KafkaConsumer<>(properties);
+        this.handler = handler;
+
     }
 
     @Override
@@ -65,30 +67,46 @@ public class KafkaTraceConsumer implements Runnable {
 
             for (final ConsumerRecord<byte[], byte[]> record : records) {
 
-                System.out.println("KEY: " + Base64.getEncoder().encodeToString(record.key()));
-                // LOGGER.info("Recevied Kafka record: {}", record.value());
-
                 final byte[] serializedTrace = record.value();
-
-                //System.out.printf("SpanId: %s, TraceId: %s\n", s.getSpanId().toStringUtf8(), s.getTraceId().toStringUtf8());
 
                 try {
                     DumpSpans s = DumpSpans.parseFrom(serializedTrace);
-                    System.out.printf("Spans: %d\n", s.getSpansCount());
+                    LOGGER.info("New dump span with {} spans ({} unique trace ids)\n",
+                        s.getSpansCount(), countUniqueTraceIds(s));
+                    handler.handle(s);
+                    System.out.println("HANDLED");
 
-                    System.out.printf("Span 0 of bundle:\n%s\n\n", SpanToString(s.getSpans(0)));
-
-                } catch (InvalidProtocolBufferException | UnsupportedEncodingException e) {
+                } catch (InvalidProtocolBufferException e) {
                     e.printStackTrace();
                 }
 
+            }
+
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         }
 
     }
 
 
-    private String SpanToString(Span s) throws UnsupportedEncodingException {
+    private int countUniqueTraceIds(DumpSpans ds) {
+        int c = 0;
+        List<ByteString> seen = new ArrayList<>(ds.getSpansCount());
+
+        for (Span s: ds.getSpansList()) {
+            if (!seen.contains(s.getTraceId())){
+                c++;
+                seen.add(s.getTraceId());
+            }
+        }
+
+        return c;
+    }
+
+    private static String SpanToString(Span s) {
 
         String spanId = Base64.getEncoder().encodeToString(s.getSpanId().toByteArray());
         String traceId = Base64.getEncoder().encodeToString(s.getTraceId().toByteArray());

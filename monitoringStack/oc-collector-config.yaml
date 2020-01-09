@@ -5,7 +5,7 @@ receivers:
 exporters:  
   kafka:
     brokers: ["kafka:9092"]
-    topic: "cluster-spans"
+    topic: "cluster-dump-spans"
 
 queued-exporters:
   jaeger-all-in-one:

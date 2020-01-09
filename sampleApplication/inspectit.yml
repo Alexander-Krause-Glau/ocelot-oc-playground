@@ -19,6 +19,7 @@ inspectit:
             attributes:
               input: _arg0
               result: _returnValue
+              monitoring_id: monitoring_id_attr
               host: host_name_attr
               method_fqn: method_fqn_attr
               application_name: appname_attr
@@ -31,6 +32,8 @@ inspectit:
             action: set
             constant-input:
               value: "UNKNOWN-APPLICATION"
+          monitoring_id_attr:
+            action: create_or_get_UUID
 
     actions:
 
@@ -47,6 +50,13 @@ inspectit:
           _methodName: String
           _class: Class
         value: "new StringBuilder(_class.getName()).append('.').append(_methodName).toString()"
+
+      create_or_get_UUID:
+        imports:
+          - java.lang.management.ManagementFactory
+        input:
+          _context: InspectitContext
+        value: "ManagementFactory.getRuntimeMXBean().getName()"
 
   logging:
     debug: true
