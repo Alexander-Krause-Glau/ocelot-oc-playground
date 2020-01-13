@@ -71,10 +71,9 @@ public class KafkaDumpSpanConsumer implements Runnable {
 
                 try {
                     DumpSpans s = DumpSpans.parseFrom(serializedTrace);
-                    LOGGER.info("New dump span with {} spans ({} unique trace ids)\n",
-                        s.getSpansCount(), countUniqueTraceIds(s));
+                    //LOGGER.info("New dump span with {} spans ({} unique trace ids)\n",
+                    //    s.getSpansCount(), countUniqueTraceIds(s));
                     handler.handle(s);
-                    System.out.println("HANDLED");
 
                 } catch (InvalidProtocolBufferException e) {
                     e.printStackTrace();

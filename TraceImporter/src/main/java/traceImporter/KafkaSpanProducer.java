@@ -53,7 +53,6 @@ public class KafkaSpanProducer implements KafkaDumpSpanConsumer.DumpSpanHandler 
 
     @Override
     public void handle(DumpSpans dumpSpans) {
-        System.out.println("CALLED");
         for (Span span: dumpSpans.getSpansList()) {
 
             Long id = Longs.fromByteArray(span.getSpanId().toByteArray());
@@ -63,21 +62,18 @@ public class KafkaSpanProducer implements KafkaDumpSpanConsumer.DumpSpanHandler 
 
             // Hashcode with sign-bit set to 0
             // Otherwise negative value occur which kafka does not like
-            int partitionID = id.hashCode() & 0x7FFFFFFF;
+            // int partitionID = id.hashCode() & 0x7FFFFFFF;
 
 
-            ProducerRecord<Long, byte[]> spanRecord = new ProducerRecord<>(TOPIC, partitionID, id, serialized);
+            ProducerRecord<Long, byte[]> spanRecord = new ProducerRecord<>(TOPIC, id, serialized);
 
             Future<RecordMetadata> metadata = kafkaProducer.send(spanRecord);
 
             String hexID = Base64.getEncoder().encodeToString(span.getSpanId().toByteArray());
-            LOGGER.info("Sent span");
-            try {
-                LOGGER.info("Sent span with id {} ({}) to partition {}",
-                    id, hexID, metadata.get(1, TimeUnit.SECONDS));
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                e.printStackTrace();
-            }
+
+                //LOGGER.info("Sent span with id {} ({}) to partition {}",
+                //    id, hexID, metadata.get(1, TimeUnit.SECONDS));
+
         }
 
 
