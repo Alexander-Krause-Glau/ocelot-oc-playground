@@ -55,8 +55,12 @@ public class SpanBatchConsumer implements Runnable {
                     //System.out.println("CLAZZ = " + record.value().get(0).getClass().toString());
                     Span s = Span.parseFrom(record.value().get(0));
                     LOGGER
-                        .info("New batch with {} spans of trace with id {}", record.value().size(),
-                            toBase64(s.getTraceId()));
+                        .info("New batch with {} spans of trace with id {} (KEY {}) (window {} to {})",
+                            record.value().size(),
+                            toBase64(s.getTraceId()),
+                            record.key().key(),
+                            record.key().window().startTime(),
+                            record.key().window().endTime());
                 } catch (InvalidProtocolBufferException e) {
                     e.printStackTrace();
                 }

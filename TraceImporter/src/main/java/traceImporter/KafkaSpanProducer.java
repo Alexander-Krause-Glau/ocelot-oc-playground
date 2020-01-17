@@ -45,7 +45,7 @@ public class KafkaSpanProducer implements KafkaDumpSpanConsumer.DumpSpanHandler 
     public void handle(DumpSpans dumpSpans) {
         for (Span span: dumpSpans.getSpansList()) {
 
-            Long id = Longs.fromByteArray(span.getSpanId().toByteArray());
+            Long id = Longs.fromByteArray(span.getTraceId().toByteArray());
             byte[] serialized = span.toByteArray();
 
 

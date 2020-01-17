@@ -38,7 +38,7 @@ public class SpanBatchProducer implements Runnable {
 
     @Override
     public void run() {
-        TimeWindows w = TimeWindows.of(Duration.ofSeconds(10l));
+        TimeWindows w = TimeWindows.of(Duration.ofSeconds(10));
         StreamsBuilder builder = new StreamsBuilder();
 
 
