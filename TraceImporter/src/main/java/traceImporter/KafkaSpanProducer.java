@@ -1,29 +1,19 @@
 package traceImporter;
 
 import com.google.common.primitives.Longs;
-import com.google.protobuf.ByteString;
 import io.opencensus.proto.dump.DumpSpans;
 import io.opencensus.proto.trace.v1.Span;
-import kafka.tools.ConsoleProducer;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.clients.producer.internals.DefaultPartitioner;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.LongSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Base64;
 import java.util.Properties;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Writes the spans contained in a span dump into the kafka topic "cluster-spans"
@@ -59,17 +49,11 @@ public class KafkaSpanProducer implements KafkaDumpSpanConsumer.DumpSpanHandler 
             byte[] serialized = span.toByteArray();
 
 
-
-            // Hashcode with sign-bit set to 0
-            // Otherwise negative value occur which kafka does not like
-            // int partitionID = id.hashCode() & 0x7FFFFFFF;
-
-
             ProducerRecord<Long, byte[]> spanRecord = new ProducerRecord<>(TOPIC, id, serialized);
 
             Future<RecordMetadata> metadata = kafkaProducer.send(spanRecord);
 
-            String hexID = Base64.getEncoder().encodeToString(span.getSpanId().toByteArray());
+            //  String hexID = Base64.getEncoder().encodeToString(span.getSpanId().toByteArray());
 
                 //LOGGER.info("Sent span with id {} ({}) to partition {}",
                 //    id, hexID, metadata.get(1, TimeUnit.SECONDS));

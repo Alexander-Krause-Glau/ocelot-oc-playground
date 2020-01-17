@@ -11,11 +11,4 @@ public class Main {
     new Thread(new SpanBatchProducer()).start();
     new Thread(new SpanBatchConsumer()).start();
   }
-
-
-
-
-
-
-
 }
