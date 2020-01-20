@@ -35,6 +35,15 @@ services:
     ports:
       - "2181:2181"
 
+  schema-registry:
+    image: confluentinc/cp-schema-registry:5.4.0
+    ports: 
+      - 8081:8081
+      - 9021:9021
+    environment: 
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+      SCHEMA_REGISTRY_HOST_NAME: 127.0.0.1
+
   kafka:
     container_name: kafka
     image: wurstmeister/kafka

@@ -2,23 +2,21 @@ package traceImporter;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
+import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.opencensus.proto.trace.v1.Span;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
-import org.apache.kafka.streams.kstream.TimeWindowedDeserializer;
-import org.apache.kafka.streams.kstream.Windowed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import traceImporter.serdes.LinkedListDeserializer;
 
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.LinkedList;
+import java.util.List;
 import java.util.Properties;
 
 
@@ -26,7 +24,7 @@ public class SpanBatchConsumer implements Runnable {
 
     private static final String TOPIC = "span-batches";
     private static final Logger LOGGER = LoggerFactory.getLogger(SpanBatchConsumer.class);
-    KafkaConsumer<Windowed<Long>, LinkedList<byte[]>> consumer;
+    KafkaConsumer<Long, List<EVSpan>> consumer;
 
     public SpanBatchConsumer() {
         final Properties properties = new Properties();
@@ -35,12 +33,8 @@ public class SpanBatchConsumer implements Runnable {
         properties.put("enable.auto.commit", "true");
         properties.put("auto.commit.interval.ms", "1000");
 
-
-        Deserializer<LinkedList<byte[]>> des =
-            new LinkedListDeserializer<>(new ByteArrayDeserializer());
-
-        this.consumer = new KafkaConsumer<>(properties,
-            new TimeWindowedDeserializer<Long>(new LongDeserializer()), des);
+        Deserializer<List<EVSpan>> des = new ListDeserializer(new KafkaAvroDeserializer());
+        this.consumer = new KafkaConsumer<>(properties, new LongDeserializer(), des);
     }
 
 
@@ -50,30 +44,22 @@ public class SpanBatchConsumer implements Runnable {
 
 
         while (true) {
-            final ConsumerRecords<Windowed<Long>, LinkedList<byte[]>> records =
+            final ConsumerRecords<Long, List<EVSpan>> records =
                 this.consumer.poll(Duration.ofMillis(100));
 
-            for (final ConsumerRecord<Windowed<Long>, LinkedList<byte[]>> record : records) {
-                try {
-                    //System.out.println("CLAZZ = " + record.value().get(0).getClass().toString());
-                    Span s = Span.parseFrom(record.value().get(0));
-                    LOGGER
-                        .info("New batch with {} spans of trace with id {} (KEY {}) (window {} to {})",
-                            record.value().size(),
-                            toBase64(s.getTraceId()),
-                            record.key().key(),
-                            record.key().window().startTime(),
-                            record.key().window().endTime());
-                } catch (InvalidProtocolBufferException e) {
-                    e.printStackTrace();
-                }
-
+            for (final ConsumerRecord<Long, List<EVSpan>> record : records) {
+                EVSpan s = record.value().get(0);
+                LOGGER
+                    .info("New batch with {} spans of trace with id {} (KEY {})",
+                        record.value().size(),
+                        toBase64(s.getTraceId()),
+                        record.key());
 
             }
         }
     }
 
-    private String toBase64(ByteString byteString) {
-        return Base64.getEncoder().encodeToString(byteString.toByteArray());
+    private String toBase64(ByteBuffer byteString) {
+        return Base64.getEncoder().encodeToString(byteString.array());
     }
 }

@@ -10,5 +10,5 @@
 rootProject.name = 'TraceImporter'
 include ':span-extractor'
 include ':span-batching'
-include 'consumer'
+include ':consumer'
 
