@@ -1,17 +1,15 @@
 package traceImporter;
 
-import org.apache.kafka.common.serialization.*;
-import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.*;
-import org.apache.kafka.streams.processor.StateStore;
-import org.apache.kafka.streams.state.WindowStore;
 import traceImporter.serdes.LinkedListSerde;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.LinkedList;
+import java.util.Properties;
 
 /**
  * Collects spans for 10 seconds, grouped by the trace id, and forwards the resulting batch to the

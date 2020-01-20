@@ -6,17 +6,18 @@ repositories {
     jcenter()
 }
 
-dependencies {
-    implementation group: 'org.apache.kafka', name: 'kafka_2.12', version: '2.2.0'
-    implementation group: 'org.apache.kafka', name: 'kafka-streams', version: '2.4.0'
+subprojects {
+    repositories {
+        mavenCentral()
+    }
+    apply plugin: 'java-library'
+
+    dependencies {
+        implementation group: 'org.slf4j', name: 'slf4j-simple', version: '1.6.1'
+        implementation group: 'org.apache.kafka', name: 'kafka_2.12', version: '2.2.0'
 
 
-    compile 'io.opencensus:opencensus-api:0.24.0'
-    compile 'io.opencensus:opencensus-exporter-trace-ocagent:0.24.0'
-    runtime 'io.opencensus:opencensus-impl:0.24.0'
-    
-    implementation group: 'org.slf4j', name: 'slf4j-simple', version: '1.6.1'
-    implementation 'io.opencensus:opencensus-proto:0.2.0'
+        testImplementation 'junit:junit:4.12'
 
-    testImplementation 'junit:junit:4.12'
+    }
 }

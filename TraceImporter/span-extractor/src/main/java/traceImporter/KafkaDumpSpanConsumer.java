@@ -11,7 +11,6 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.UnsupportedEncodingException;
 import java.time.Duration;
 import java.util.*;
 
@@ -71,8 +70,8 @@ public class KafkaDumpSpanConsumer implements Runnable {
 
                 try {
                     DumpSpans s = DumpSpans.parseFrom(serializedTrace);
-                    //LOGGER.info("New dump span with {} spans ({} unique trace ids)\n",
-                    //    s.getSpansCount(), countUniqueTraceIds(s));
+                    LOGGER.info("New dump span with {} spans ({} unique trace ids)\n",
+                        s.getSpansCount(), countUniqueTraceIds(s));
                     handler.handle(s);
 
                 } catch (InvalidProtocolBufferException e) {

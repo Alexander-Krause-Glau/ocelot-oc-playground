@@ -16,7 +16,10 @@ import org.slf4j.LoggerFactory;
 import traceImporter.serdes.LinkedListDeserializer;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.LinkedList;
+import java.util.Properties;
 
 
 public class SpanBatchConsumer implements Runnable {

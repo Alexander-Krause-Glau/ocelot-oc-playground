@@ -11,7 +11,6 @@ import org.apache.kafka.common.serialization.LongSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Base64;
 import java.util.Properties;
 import java.util.concurrent.Future;
 
