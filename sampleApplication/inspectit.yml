@@ -68,3 +68,5 @@ inspectit:
         address: "localhost:55678"
         service-name: "Alex sein Test - OpenCensus"
         use-insecure: true
+      zipkin:
+        url: http://127.0.0.1:9411/api/v2/spans

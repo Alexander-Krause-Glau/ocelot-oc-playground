@@ -1,5 +1,6 @@
 package traceImporter;
 
+import com.google.common.io.BaseEncoding;
 import com.google.common.primitives.Longs;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
@@ -9,6 +10,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Properties;
 import java.util.concurrent.Future;
@@ -66,14 +69,27 @@ public class KafkaSpanProducer implements KafkaDumpSpanConsumer.DumpSpanHandler 
 
       Future<RecordMetadata> metadata = kafkaProducer.send(spanRecord);
 
-      String hexID = Base64.getEncoder().encodeToString(span.getSpanId().toByteArray());
+      String traceid =
+          BaseEncoding.base16().lowerCase().encode(span.getTraceId().toByteArray(), 0, 16);
+      String spanid =
+          BaseEncoding.base16().lowerCase().encode(span.getSpanId().toByteArray(), 0, 8);
 
-      LOGGER.info("Sent span with trace id {} and span id {}, {})", id, hexID,
-          span.getTraceId().toByteArray().toString());
+      LOGGER.info("Sent span with trace id {} and span id {}", traceid, spanid);
+
+      String hexID = Base64.getEncoder().encodeToString(span.getSpanId().toByteArray());
+      final Charset UTF8_CHARSET = Charset.forName("UTF-8");
+      // span.getSpanId().toString().toLowerBase16();
+      // System.out.println(new String(span.getTraceId().toByteArray(), UTF8_CHARSET));
+
+      // System.out.println(span.getSpanId().size());
+
+      // String test = String.format("%02x", span.getSpanId().toByteArray());
+      // System.out.println(test);
+
+      // LOGGER.info("Sent span with trace id {} and span id {}, {})", id, hexID,
+      // normalizeTraceId(span.getTraceId().toByteArray().toString()));
 
     }
-
-
   }
 
 
@@ -94,6 +110,79 @@ public class KafkaSpanProducer implements KafkaDumpSpanConsumer.DumpSpanHandler 
 
     return serialized;
 
+  }
+
+  //
+
+  public static String normalizeTraceId(String traceId) {
+    if (traceId == null)
+      throw new NullPointerException("traceId == null");
+    int length = traceId.length();
+    if (length == 0)
+      throw new IllegalArgumentException("traceId is empty");
+    if (length > 32)
+      throw new IllegalArgumentException("traceId.length > 32");
+    int zeros = validateHexAndReturnZeroPrefix(traceId);
+    if (zeros == length)
+      throw new IllegalArgumentException("traceId is all zeros");
+    if (length == 32 || length == 16) {
+      if (length == 32 && zeros >= 16)
+        return traceId.substring(16);
+      return traceId;
+    } else if (length < 16) {
+      return padLeft(traceId, 16);
+    } else {
+      return padLeft(traceId, 32);
+    }
+  }
+
+  static final String THIRTY_TWO_ZEROS;
+  static {
+    char[] zeros = new char[32];
+    Arrays.fill(zeros, '0');
+    THIRTY_TWO_ZEROS = new String(zeros);
+  }
+
+  static String padLeft(String id, int desiredLength) {
+    int length = id.length();
+    int numZeros = desiredLength - length;
+
+    char[] data = shortStringBuffer();
+    THIRTY_TWO_ZEROS.getChars(0, numZeros, data, 0);
+    id.getChars(0, length, data, numZeros);
+
+    return new String(data, 0, desiredLength);
+  }
+
+  static final ThreadLocal<char[]> SHORT_STRING_BUFFER = new ThreadLocal<>();
+  /** Maximum character length constraint of most names, IP literals and IDs. */
+  public static final int SHORT_STRING_LENGTH = 256;
+
+  public static char[] shortStringBuffer() {
+    char[] shortStringBuffer = SHORT_STRING_BUFFER.get();
+    if (shortStringBuffer == null) {
+      shortStringBuffer = new char[SHORT_STRING_LENGTH];
+      SHORT_STRING_BUFFER.set(shortStringBuffer);
+    }
+    return shortStringBuffer;
+  }
+
+
+  static int validateHexAndReturnZeroPrefix(String id) {
+    int zeros = 0;
+    boolean inZeroPrefix = id.charAt(0) == '0';
+    for (int i = 0, length = id.length(); i < length; i++) {
+      char c = id.charAt(i);
+      if ((c < '0' || c > '9') && (c < 'a' || c > 'f')) {
+        throw new IllegalArgumentException(id + " should be lower-hex encoded with no prefix");
+      }
+      if (c != '0') {
+        inZeroPrefix = false;
+      } else if (inZeroPrefix) {
+        zeros++;
+      }
+    }
+    return zeros;
   }
 
 }

@@ -78,6 +78,8 @@ public class KafkaDumpSpanConsumer implements Runnable {
               countUniqueTraceIds(s));
           handler.handle(s);
 
+          //System.out.println(SpanToString(s.getSpans(0)));
+
         } catch (InvalidProtocolBufferException e) {
           e.printStackTrace();
         }
