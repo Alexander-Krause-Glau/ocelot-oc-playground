@@ -7,6 +7,7 @@ import io.opencensus.proto.dump.DumpSpans;
 import io.opencensus.proto.trace.v1.Span;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.util.Properties;
@@ -67,7 +68,8 @@ public class KafkaSpanProducer implements KafkaDumpSpanConsumer.DumpSpanHandler 
 
       String hexID = Base64.getEncoder().encodeToString(span.getSpanId().toByteArray());
 
-      LOGGER.info("Sent span with id {} ({})", id, hexID);
+      LOGGER.info("Sent span with trace id {} and span id {}, {})", id, hexID,
+          span.getTraceId().toByteArray().toString());
 
     }
 

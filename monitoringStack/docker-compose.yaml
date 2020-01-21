@@ -57,5 +57,5 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_CREATE_TOPICS: "cluster-spans:1:1,cluster-dump-spans:1:1" 
+      KAFKA_CREATE_TOPICS: "cluster-spans:1:1,cluster-dump-spans:1:1,span-batches:1:1" 
       
