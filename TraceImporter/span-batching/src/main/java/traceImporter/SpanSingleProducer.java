@@ -31,17 +31,14 @@ public class SpanSingleProducer implements Runnable {
   private static final String IN_TOPIC = "cluster-spans";
   private static final String OUT_TOPIC = "span-batches";
 
-
   private final Properties properties = new Properties();
-
 
   private KafkaProducer<Long, EVSpan> kafkaProducer;
   private KafkaConsumer<Long, EVSpan> kafkaConsumer;
 
 
   public SpanSingleProducer() {
-
-
+    
     properties.put("bootstrap.servers", "localhost:9091");
     properties.put("group.id", "trace-importer-1");
     properties.put("enable.auto.commit", "true");
@@ -66,7 +63,6 @@ public class SpanSingleProducer implements Runnable {
 
     kafkaProducer = new KafkaProducer<>(properties);
     kafkaConsumer = new KafkaConsumer<>(properties);
-
   }
 
 

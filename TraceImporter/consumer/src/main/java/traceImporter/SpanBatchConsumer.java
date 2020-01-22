@@ -1,10 +1,8 @@
 package traceImporter;
 
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 import java.util.Properties;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -46,13 +44,9 @@ public class SpanBatchConsumer implements Runnable {
       for (final ConsumerRecord<Long, List<EVSpan>> record : records) {
         EVSpan s = record.value().get(0);
         LOGGER.info("New batch with {} spans of trace with id {} (KEY {})", record.value().size(),
-            toBase64(s.getTraceId()), record.key());
+            s.getTraceId(), record.key());
 
       }
     }
-  }
-
-  private String toBase64(ByteBuffer byteString) {
-    return Base64.getEncoder().encodeToString(byteString.array());
   }
 }

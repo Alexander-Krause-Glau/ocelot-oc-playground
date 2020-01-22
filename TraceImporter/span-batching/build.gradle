@@ -16,5 +16,4 @@ repositories {
 
 dependencies {
     implementation group: 'org.apache.kafka', name: 'kafka-streams', version: '2.4.0'
-    implementation 'io.opencensus:opencensus-proto:0.2.0'
 }

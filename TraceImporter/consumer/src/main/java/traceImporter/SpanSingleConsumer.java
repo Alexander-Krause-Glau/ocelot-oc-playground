@@ -3,10 +3,8 @@ package traceImporter;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.confluent.kafka.serializers.KafkaAvroDeserializerConfig;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Properties;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -50,13 +48,10 @@ public class SpanSingleConsumer implements Runnable {
       ConsumerRecords<Long, EVSpan> records = this.consumer.poll(Duration.ofMillis(100));
       for (ConsumerRecord<Long, EVSpan> rec : records) {
         EVSpan s = rec.value();
-        LOGGER.info("New span with trace id {} and span id {}", toBase64(s.getTraceId()),
-            toBase64(s.getSpanId()));
+        LOGGER.info("New span with trace id {} and span id {}", s.getTraceId(), s.getSpanId());
       }
     }
   }
 
-  private String toBase64(ByteBuffer byteString) {
-    return Base64.getEncoder().encodeToString(byteString.array());
-  }
+
 }

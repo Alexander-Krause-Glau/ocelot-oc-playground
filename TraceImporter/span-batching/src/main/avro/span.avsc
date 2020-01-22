@@ -2,7 +2,7 @@
     "type": "record",
     "name": "EVSpan",
     "fields": [
-        {"name": "spanId", "type": "bytes"},
-        {"name": "traceId", "type": "bytes"}
+        {"name": "spanId", "type": "string"},
+        {"name": "traceId", "type": "string"}
     ]
 }
