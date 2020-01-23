@@ -5,6 +5,8 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import io.opencensus.proto.dump.DumpSpans;
 import io.opencensus.proto.trace.v1.Span;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
@@ -14,10 +16,15 @@ import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.kstream.Aggregator;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.ForeachAction;
 import org.apache.kafka.streams.kstream.KStream;
-import org.apache.kafka.streams.processor.LogAndSkipOnInvalidTimestamp;
+import org.apache.kafka.streams.kstream.KTable;
+import org.apache.kafka.streams.kstream.KeyValueMapper;
+import org.apache.kafka.streams.kstream.TimeWindowedKStream;
+import org.apache.kafka.streams.kstream.TimeWindows;
+import org.apache.kafka.streams.kstream.Windowed;
 
 /**
  * Collects spans for 10 seconds, grouped by the trace id, and forwards the resulting batch to the
@@ -46,20 +53,17 @@ public class SpanToTraceReconstructorStream {
 
 
   public void run() {
-    System.out.println("test1");
     StreamsBuilder builder = new StreamsBuilder();
     // KStream<byte[], byte[]> dumpSpanStream =
     // builder.stream(IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray())
     // .withTimestampExtractor(new LogAndSkipOnInvalidTimestamp()));
     KStream<byte[], byte[]> dumpSpanStream =
         builder.stream(IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray()));
-    System.out.println("test2");
     KStream<String, EVSpan> traceIdSpanStream = dumpSpanStream.flatMap((key, value) -> {
 
       DumpSpans dumpSpan;
       List<KeyValue<String, EVSpan>> result = new LinkedList<>();
       try {
-        System.out.println("test");
 
         dumpSpan = DumpSpans.parseFrom(value);
 
@@ -82,11 +86,41 @@ public class SpanToTraceReconstructorStream {
 
     });
 
-    traceIdSpanStream.foreach(new ForeachAction<String, EVSpan>() {
-      public void apply(String key, EVSpan value) {
-        System.out.println(key + ": " + value.getSpanId());
+    TimeWindowedKStream<String, EVSpan> windowedStream =
+        traceIdSpanStream.groupByKey().windowedBy(TimeWindows.of(Duration.ofSeconds(10)));
+
+    KTable<Windowed<String>, EVSpanList> messagesAggregatedByWindow = windowedStream
+        .aggregate(() -> new EVSpanList(), new Aggregator<String, EVSpan, EVSpanList>() {
+
+          @Override
+          public EVSpanList apply(String key, EVSpan value, EVSpanList aggregate) {
+            if (aggregate.getSpanList() == null) {
+              aggregate.setSpanList(new ArrayList<EVSpan>());
+            }
+            aggregate.getSpanList().add(value);
+            return aggregate;
+          }
+        });
+
+    KStream<Windowed<String>, EVSpanList> spansWindowedStream =
+        messagesAggregatedByWindow.toStream();
+
+    spansWindowedStream.foreach(new ForeachAction<Windowed<String>, EVSpanList>() {
+      public void apply(Windowed<String> key, EVSpanList value) {
+        System.out.println(key.key() + ": " + value.getSpanList().get(0).getTraceId() + "; "
+            + value.getSpanList().size());
       }
     });
+
+    KStream<String, EVSpanList> transformed = spansWindowedStream
+        .map(new KeyValueMapper<Windowed<String>, EVSpanList, KeyValue<String, EVSpanList>>() {
+          @Override
+          public KeyValue<String, EVSpanList> apply(Windowed<String> key, EVSpanList value) {
+            return new KeyValue<>(key.key(), value);
+          }
+        });
+
+    transformed.to(OUT_TOPIC);
 
     final KafkaStreams streams = new KafkaStreams(builder.build(), streamsConfig);
     streams.cleanUp();
