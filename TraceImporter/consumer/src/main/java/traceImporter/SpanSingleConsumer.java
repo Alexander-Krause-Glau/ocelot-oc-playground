@@ -11,6 +11,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,12 +20,12 @@ public class SpanSingleConsumer implements Runnable {
 
   private static final String TOPIC = "span-batches";
   private static final Logger LOGGER = LoggerFactory.getLogger(SpanSingleConsumer.class);
-  KafkaConsumer<Long, EVSpan> consumer;
+  KafkaConsumer<String, EVSpan> consumer;
 
   public SpanSingleConsumer() {
     final Properties properties = new Properties();
     properties.put("bootstrap.servers", "localhost:9091");
-    properties.put("group.id", "trace-importer-1");
+    properties.put("group.id", "span-consumer");
     properties.put("enable.auto.commit", "true");
     properties.put("auto.commit.interval.ms", "1000");
 
@@ -33,7 +34,7 @@ public class SpanSingleConsumer implements Runnable {
     properties.put(KafkaAvroDeserializerConfig.SPECIFIC_AVRO_READER_CONFIG, true);
 
     properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class);
-    properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class);
+    properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
 
     this.consumer = new KafkaConsumer<>(properties);
   }
@@ -45,8 +46,8 @@ public class SpanSingleConsumer implements Runnable {
 
 
     while (true) {
-      ConsumerRecords<Long, EVSpan> records = this.consumer.poll(Duration.ofMillis(100));
-      for (ConsumerRecord<Long, EVSpan> rec : records) {
+      ConsumerRecords<String, EVSpan> records = this.consumer.poll(Duration.ofMillis(100));
+      for (ConsumerRecord<String, EVSpan> rec : records) {
         EVSpan s = rec.value();
         LOGGER.info("New span with trace id {} and span id {}", s.getTraceId(), s.getSpanId());
       }

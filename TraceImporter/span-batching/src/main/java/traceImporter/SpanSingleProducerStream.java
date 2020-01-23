@@ -25,10 +25,9 @@ public class SpanSingleProducerStream {
   public SpanSingleProducerStream() {
 
     streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9091");
-    streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "trace-importer-1");
+    streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "span-batching");
 
-    streamsConfig.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,
-        "http://localhost:8081");
+    streamsConfig.put("schema.registry.url", "http://localhost:8081");
 
     streamsConfig.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, StringSerde.class);
     streamsConfig.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class);

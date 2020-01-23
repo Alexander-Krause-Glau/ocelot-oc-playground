@@ -7,7 +7,6 @@ version 'unspecified'
 
 sourceCompatibility = 1.8
 
-
 sourceSets.main.java.srcDirs = ['build/generated-main-avro-java','src/main/java']
 
 repositories {
@@ -15,5 +14,5 @@ repositories {
 }
 
 dependencies {
-    implementation group: 'org.apache.kafka', name: 'kafka-streams', version: '2.4.0'
+    implementation group: 'org.apache.kafka', name: 'kafka-streams', version: '2.3.0'
 }
