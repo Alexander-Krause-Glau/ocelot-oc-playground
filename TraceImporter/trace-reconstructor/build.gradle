@@ -1,0 +1,19 @@
+plugins {
+    id 'java'
+    id "com.commercehub.gradle.plugin.avro" version "0.9.1"
+}
+
+version 'unspecified'
+
+sourceCompatibility = 1.8
+
+sourceSets.main.java.srcDirs = ['build/generated-main-avro-java','src/main/java']
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+	implementation 'io.opencensus:opencensus-proto:0.2.0'
+    implementation group: 'org.apache.kafka', name: 'kafka-streams', version: '2.3.0'
+}
