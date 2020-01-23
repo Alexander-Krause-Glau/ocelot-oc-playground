@@ -8,13 +8,16 @@ import io.opencensus.proto.trace.v1.Span;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
+import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serdes.StringSerde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.ForeachAction;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.processor.LogAndSkipOnInvalidTimestamp;
 
 /**
  * Collects spans for 10 seconds, grouped by the trace id, and forwards the resulting batch to the
@@ -31,6 +34,8 @@ public class SpanToTraceReconstructorStream {
 
     streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9091");
     streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "span-batching");
+    // streamsConfig.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG,
+    // "org.apache.kafka.streams.processor.WallclockTimestampExtractor");
 
     streamsConfig.put("schema.registry.url", "http://localhost:8081");
 
@@ -41,14 +46,19 @@ public class SpanToTraceReconstructorStream {
 
 
   public void run() {
+    System.out.println("test1");
     StreamsBuilder builder = new StreamsBuilder();
-    KStream<byte[], byte[]> dumpSpanStream = builder.stream(IN_TOPIC);
-
+    KStream<byte[], byte[]> dumpSpanStream =
+        builder.stream(IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray())
+            .withTimestampExtractor(new LogAndSkipOnInvalidTimestamp()));
+    System.out.println("test2");
     KStream<String, EVSpan> traceIdSpanStream = dumpSpanStream.flatMap((key, value) -> {
 
       DumpSpans dumpSpan;
       List<KeyValue<String, EVSpan>> result = new LinkedList<>();
       try {
+        System.out.println("test");
+
         dumpSpan = DumpSpans.parseFrom(value);
 
         for (Span s : dumpSpan.getSpansList()) {
