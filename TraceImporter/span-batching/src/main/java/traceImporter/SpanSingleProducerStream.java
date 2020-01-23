@@ -1,6 +1,5 @@
 package traceImporter;
 
-import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import java.util.Properties;
 import org.apache.kafka.common.serialization.Serdes.StringSerde;
@@ -45,8 +44,6 @@ public class SpanSingleProducerStream {
         System.out.println(key + ": " + value.getSpanId());
       }
     });
-
-    System.out.println("test");
 
     evSpanStream.to(OUT_TOPIC);
 

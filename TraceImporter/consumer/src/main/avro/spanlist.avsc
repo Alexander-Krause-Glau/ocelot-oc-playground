@@ -1,14 +1,5 @@
 {"namespace": "traceImporter",
     "type": "record",
-    "name": "EVSpan",
-    "fields": [
-        {"name": "spanId", "type": "string"},
-        {"name": "traceId", "type": "string"}
-    ]
-}
-
-{"namespace": "traceImporter",
-    "type": "record",
     "name": "EVSpanList",
     "fields":[
         {
