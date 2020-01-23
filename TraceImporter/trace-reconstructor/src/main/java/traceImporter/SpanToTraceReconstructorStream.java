@@ -48,9 +48,11 @@ public class SpanToTraceReconstructorStream {
   public void run() {
     System.out.println("test1");
     StreamsBuilder builder = new StreamsBuilder();
+    // KStream<byte[], byte[]> dumpSpanStream =
+    // builder.stream(IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray())
+    // .withTimestampExtractor(new LogAndSkipOnInvalidTimestamp()));
     KStream<byte[], byte[]> dumpSpanStream =
-        builder.stream(IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray())
-            .withTimestampExtractor(new LogAndSkipOnInvalidTimestamp()));
+        builder.stream(IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray()));
     System.out.println("test2");
     KStream<String, EVSpan> traceIdSpanStream = dumpSpanStream.flatMap((key, value) -> {
 
