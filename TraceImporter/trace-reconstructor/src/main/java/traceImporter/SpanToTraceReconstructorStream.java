@@ -34,6 +34,7 @@ public class SpanToTraceReconstructorStream {
 
   private static final String IN_TOPIC = "cluster-dump-spans";
   private static final String OUT_TOPIC = "span-batches";
+  private static final String INTERMEDIATE_TOPIC = "explorviz-spans";
 
   private final Properties streamsConfig = new Properties();
 
@@ -41,22 +42,19 @@ public class SpanToTraceReconstructorStream {
 
     streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9091");
     streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "span-batching");
-    // streamsConfig.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG,
-    // "org.apache.kafka.streams.processor.WallclockTimestampExtractor");
 
     streamsConfig.put("schema.registry.url", "http://localhost:8081");
 
     streamsConfig.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, StringSerde.class);
     streamsConfig.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class);
-
   }
 
 
   public void run() {
     StreamsBuilder builder = new StreamsBuilder();
-    // KStream<byte[], byte[]> dumpSpanStream =
-    // builder.stream(IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray())
-    // .withTimestampExtractor(new LogAndSkipOnInvalidTimestamp()));
+
+    // Stream 1
+
     KStream<byte[], byte[]> dumpSpanStream =
         builder.stream(IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray()));
     KStream<String, EVSpan> traceIdSpanStream = dumpSpanStream.flatMap((key, value) -> {
@@ -74,7 +72,9 @@ public class SpanToTraceReconstructorStream {
           String spanId =
               BaseEncoding.base16().lowerCase().encode(s.getSpanId().toByteArray(), 0, 8);
 
-          result.add(KeyValue.pair(traceId, new EVSpan(spanId, traceId)));
+          int timestamp = s.getStartTime().getNanos();
+
+          result.add(KeyValue.pair(traceId, new EVSpan(spanId, traceId, timestamp)));
         }
 
       } catch (InvalidProtocolBufferException e) {
@@ -86,8 +86,26 @@ public class SpanToTraceReconstructorStream {
 
     });
 
+    traceIdSpanStream.to(INTERMEDIATE_TOPIC);
+    final KafkaStreams streams = new KafkaStreams(builder.build(), streamsConfig);
+    streams.cleanUp();
+    streams.start();
+
+    Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook") {
+      @Override
+      public void run() {
+        streams.close();
+      }
+    });
+
+    // Stream 2
+
+    StreamsBuilder builder2 = new StreamsBuilder();
+
+    KStream<String, EVSpan> explSpanStream = builder2.stream(INTERMEDIATE_TOPIC);
+
     TimeWindowedKStream<String, EVSpan> windowedStream =
-        traceIdSpanStream.groupByKey().windowedBy(TimeWindows.of(Duration.ofSeconds(10)));
+        explSpanStream.groupByKey().windowedBy(TimeWindows.of(Duration.ofSeconds(10)));
 
     KTable<Windowed<String>, EVSpanList> messagesAggregatedByWindow = windowedStream
         .aggregate(() -> new EVSpanList(), new Aggregator<String, EVSpan, EVSpanList>() {
@@ -122,14 +140,20 @@ public class SpanToTraceReconstructorStream {
 
     transformed.to(OUT_TOPIC);
 
-    final KafkaStreams streams = new KafkaStreams(builder.build(), streamsConfig);
-    streams.cleanUp();
-    streams.start();
+    Properties streamsConfig2 = new Properties();
+    streamsConfig2.putAll(streamsConfig);
+    streamsConfig2.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG,
+        EVSpanTimestampKafkaExtractor.class);
+    streamsConfig2.put(StreamsConfig.APPLICATION_ID_CONFIG, "explorviz-span-batching");
+
+    final KafkaStreams streams2 = new KafkaStreams(builder2.build(), streamsConfig2);
+    streams2.cleanUp();
+    streams2.start();
 
     Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook") {
       @Override
       public void run() {
-        streams.close();
+        streams2.close();
       }
     });
   }

@@ -3,27 +3,7 @@
     "name": "EVSpan",
     "fields": [
         {"name": "spanId", "type": "string"},
-        {"name": "traceId", "type": "string"}
+        {"name": "traceId", "type": "string"},
+        {"name": "timestamp", "type": "int"}
     ]
-}
-
-{"namespace": "traceImporter",
-    "type": "record",
-    "name": "EVSpanList",
-    "fields":[
-        {
-            "name":"spanList",
-            "type":{
-                "type": "array",  
-                "items":{
-                    "name":"EVSpan",
-                    "type":"record",
-                    "fields":[
-                        {"name": "spanId", "type": "string"},
-        				{"name": "traceId", "type": "string"}
-                    ]
-                }
-            }
-        }
-    ] 
 }
