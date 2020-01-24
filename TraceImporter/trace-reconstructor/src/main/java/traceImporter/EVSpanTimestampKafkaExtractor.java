@@ -7,7 +7,7 @@ public class EVSpanTimestampKafkaExtractor implements TimestampExtractor {
 
   @Override
   public long extract(ConsumerRecord<Object, Object> record, long previousTimestamp) {
-    int timestamp = -1;
+    long timestamp = -1;
     final EVSpan span = (EVSpan) record.value();
 
     if (span != null) {

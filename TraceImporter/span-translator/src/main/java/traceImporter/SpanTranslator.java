@@ -62,7 +62,7 @@ public class SpanTranslator {
           String spanId =
               BaseEncoding.base16().lowerCase().encode(s.getSpanId().toByteArray(), 0, 8);
 
-          int timestamp = s.getStartTime().getNanos();
+          long timestamp = s.getStartTime().getNanos()/1000000;
 
           result.add(KeyValue.pair(traceId, new EVSpan(spanId, traceId, timestamp)));
         }
