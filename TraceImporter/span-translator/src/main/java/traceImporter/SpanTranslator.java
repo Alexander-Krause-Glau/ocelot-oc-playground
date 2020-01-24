@@ -5,6 +5,9 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import io.opencensus.proto.dump.DumpSpans;
 import io.opencensus.proto.trace.v1.Span;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Properties;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serdes.StringSerde;
 import org.apache.kafka.streams.KafkaStreams;
@@ -13,10 +16,6 @@ import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
-
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Properties;
 
 /**
  * Translates opencensus {@link Span} objects to {@link EVSpan}s.
@@ -62,9 +61,10 @@ public class SpanTranslator {
           String spanId =
               BaseEncoding.base16().lowerCase().encode(s.getSpanId().toByteArray(), 0, 8);
 
-          long timestamp = s.getStartTime().getNanos()/1000000;
+          long timestamp = s.getStartTime().getNanos() / 1000000;
 
           result.add(KeyValue.pair(traceId, new EVSpan(spanId, traceId, timestamp)));
+          // result.add(KeyValue.pair(traceId, new EVSpan(spanId, traceId, timestamp, 2)));
         }
 
       } catch (InvalidProtocolBufferException e) {
