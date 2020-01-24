@@ -11,7 +11,8 @@
                     "type":"record",
                     "fields":[
                         {"name": "spanId", "type": "string"},
-        				{"name": "traceId", "type": "string"}
+        				{"name": "traceId", "type": "string"},
+        				{"name": "timestamp", "type": "int"}
                     ]
                 }
             }

@@ -293,7 +293,7 @@ private static final long serialVersionUID = 0L;
   public static final class Builder extends
       com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
       // @@protoc_insertion_point(builder_implements:opencensus.proto.dump.v1.DumpSpans)
-      io.opencensus.proto.dump.DumpSpansOrBuilder {
+      DumpSpansOrBuilder {
     public static final com.google.protobuf.Descriptors.Descriptor
         getDescriptor() {
       return DumpProto.internal_static_opencensus_proto_dump_v1_DumpSpans_descriptor;
