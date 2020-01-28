@@ -1,16 +1,20 @@
 package traceImporter;
 
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Properties;
 import org.apache.kafka.common.serialization.Serdes.StringSerde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
-import org.apache.kafka.streams.kstream.*;
-
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Properties;
+import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KTable;
+import org.apache.kafka.streams.kstream.KeyValueMapper;
+import org.apache.kafka.streams.kstream.TimeWindowedKStream;
+import org.apache.kafka.streams.kstream.TimeWindows;
+import org.apache.kafka.streams.kstream.Windowed;
 
 /**
  * Collects spans for 10 seconds, grouped by the trace id, and forwards the resulting batch to the
@@ -18,7 +22,7 @@ import java.util.Properties;
  */
 public class SpanToTraceReconstructorStream {
 
-  private static final String OUT_TOPIC = "span-batches";
+  private static final String OUT_TOPIC = "explorviz-traces";
   private static final String IN_TOPIC = "explorviz-spans";
 
   private final Properties streamsConfig = new Properties();
@@ -47,25 +51,92 @@ public class SpanToTraceReconstructorStream {
     TimeWindowedKStream<String, EVSpan> windowedStream =
         explSpanStream.groupByKey().windowedBy(TimeWindows.of(Duration.ofSeconds(10)));
 
-    KTable<Windowed<String>, EVSpanList> messagesAggregatedByWindow = windowedStream
-        .aggregate(EVSpanList::new, (key, value, aggregate) -> {
-          if (aggregate.getSpanList() == null) {
-            aggregate.setSpanList(new ArrayList<>());
+    KTable<Windowed<String>, Trace> messagesAggregatedByWindow =
+        windowedStream.aggregate(Trace::new, (traceId, evSpan, trace) -> {
+
+          long evSpanStartTime = evSpan.getStartTime();
+          long evSpanEndTime = evSpan.getEndTime();
+
+          if (trace.getSpanList() == null) {
+            trace.setSpanList(new ArrayList<>());
+            trace.getSpanList().add(evSpan);
+
+            trace.setStartTime(evSpanStartTime);
+            trace.setEndTime(evSpanEndTime);
+            trace.setOverallRequestCount(1);
+            trace.setDuration(evSpanEndTime - evSpanStartTime);
+
+            trace.setTraceId(evSpan.getTraceId());
+          } else {
+
+            // TODO
+            // Implement
+            // - traceDuration
+            // - Tracesteps with caller callee each = EVSpan
+
+
+            // Find duplicates in Trace (via fqn), aggregate based on request count
+            // Furthermore, potentially update trace values
+
+            long newStartTime = trace.getStartTime();
+            long newEndTime = trace.getEndTime();
+
+            for (int i = 0; i < trace.getSpanList().size(); i++) {
+              EVSpan includedSpan = trace.getSpanList().get(i);
+
+              if (includedSpan.getOperationName().equals(evSpan.getOperationName())) {
+                includedSpan.setRequestCount(includedSpan.getRequestCount() + 1);
+                break;
+              } else if (i + 1 == trace.getSpanList().size()) {
+                // currently comparing to last entry, which is not equal, therefore
+                // add the span to the list
+                trace.getSpanList().add(evSpan);
+              }
+
+              // update trace values
+              if (trace.getStartTime() > evSpanStartTime
+                  && includedSpan.getStartTime() > evSpanStartTime) {
+                System.out.println(
+                    "Updated from start " + trace.getStartTime() + " to " + evSpanStartTime);
+                trace.setStartTime(evSpanStartTime);
+
+              }
+
+              if (trace.getEndTime() < evSpanEndTime && includedSpan.getEndTime() < evSpanEndTime) {
+                System.out
+                    .println("Updated from end " + trace.getEndTime() + " to " + evSpanEndTime);
+                trace.setEndTime(evSpanEndTime);
+              }
+
+              trace.setOverallRequestCount(trace.getOverallRequestCount() + 1);
+
+              trace.setDuration(trace.getEndTime() - trace.getStartTime());
+            }
           }
-          aggregate.getSpanList().add(value);
-          return aggregate;
+
+          return trace;
         });
 
-    KStream<Windowed<String>, EVSpanList> spansWindowedStream =
-        messagesAggregatedByWindow.toStream();
+    KStream<Windowed<String>, Trace> spansWindowedStream = messagesAggregatedByWindow.toStream();
 
-    spansWindowedStream.foreach(
-        (key, value) -> System.out.printf("New trace with %d spans (id: %s)\n",
-            value.getSpanList().size(), key));
+    spansWindowedStream.foreach((key, value) -> System.out
+        .printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(), key));
 
-    KStream<String, EVSpanList> transformed = spansWindowedStream
-        .map(
-            (KeyValueMapper<Windowed<String>, EVSpanList, KeyValue<String, EVSpanList>>) (key, value) -> new KeyValue<>(key.key(), value));
+    // spansWindowedStream.foreach((key, value) -> {
+    //
+    // System.out.printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(), key);
+    //
+    // List<EVSpan> list = value.getSpanList();
+    //
+    // list.forEach((val) -> {
+    // System.out.println(val.getOperationName());
+    // });
+    //
+    // });
+
+    KStream<String, Trace> transformed = spansWindowedStream
+        .map((KeyValueMapper<Windowed<String>, Trace, KeyValue<String, Trace>>) (key,
+            value) -> new KeyValue<>(key.key(), value));
 
     transformed.to(OUT_TOPIC);
 

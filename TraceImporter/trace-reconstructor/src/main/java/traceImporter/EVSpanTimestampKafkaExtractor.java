@@ -11,7 +11,7 @@ public class EVSpanTimestampKafkaExtractor implements TimestampExtractor {
     final EVSpan span = (EVSpan) record.value();
 
     if (span != null) {
-      timestamp = span.getTimestamp();
+      timestamp = span.getStartTime();
     }
     if (timestamp < 0) {
       // Invalid timestamp! Attempt to estimate a new timestamp,

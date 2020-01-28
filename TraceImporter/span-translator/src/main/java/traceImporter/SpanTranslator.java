@@ -4,9 +4,13 @@ import com.google.common.io.BaseEncoding;
 import com.google.protobuf.InvalidProtocolBufferException;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import io.opencensus.proto.dump.DumpSpans;
+import io.opencensus.proto.trace.v1.AttributeValue;
 import io.opencensus.proto.trace.v1.Span;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serdes.StringSerde;
@@ -61,10 +65,29 @@ public class SpanTranslator {
           String spanId =
               BaseEncoding.base16().lowerCase().encode(s.getSpanId().toByteArray(), 0, 8);
 
-          long timestamp = s.getStartTime().getNanos() / 1000000;
+          // TODO Does this work?
+          long startTime = Duration
+              .ofSeconds(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toMillis();
+          long endTime =
+              Duration.ofSeconds(s.getEndTime().getSeconds(), s.getEndTime().getNanos()).toMillis();
+          long duration = endTime - startTime;
 
-          result.add(KeyValue.pair(traceId, new EVSpan(spanId, traceId, timestamp)));
-          // result.add(KeyValue.pair(traceId, new EVSpan(spanId, traceId, timestamp, 2)));
+          // Testing time
+          Instant t =
+              Instant.ofEpochSecond(s.getStartTime().getSeconds(), s.getStartTime().getNanos());
+          Instant t1 =
+              Instant.ofEpochSecond(s.getEndTime().getSeconds(), s.getEndTime().getNanos());
+
+          // System.out.println(duration + " und " + Duration.between(t, t1).getNano());
+
+          Map<String, AttributeValue> attributes = s.getAttributes().getAttributeMapMap();
+
+          String operationName = attributes.get("method_fqn").getStringValue().getValue();
+          String hostname = attributes.get("host").getStringValue().getValue();
+          String appName = attributes.get("application_name").getStringValue().getValue();
+
+          result.add(KeyValue.pair(traceId, new EVSpan(spanId, traceId, startTime, endTime,
+              duration, operationName, 1, hostname, appName)));
         }
 
       } catch (InvalidProtocolBufferException e) {
