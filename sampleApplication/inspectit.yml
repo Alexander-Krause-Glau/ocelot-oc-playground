@@ -7,18 +7,16 @@ inspectit:
 
   instrumentation:
     scopes:
-      fibonacci_scope:
+      allClasses:
         type: {name: net.explorviz.sampleApplication, matcher-mode: STARTS_WITH_IGNORE_CASE}
 
     rules:
-      trace_fibonacci:
+      all_methods_no_input_return:
         scopes:
-          fibonacci_scope: true
+          allClasses: true
         tracing:
             start-span: true
             attributes:
-              input: _arg0
-              result: _returnValue
               monitoring_id: monitoring_id_attr
               host: host_name_attr
               method_fqn: method_fqn_attr
