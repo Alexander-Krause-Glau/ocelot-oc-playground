@@ -49,8 +49,8 @@ public class SpanToTraceReconstructorStream {
 
     KStream<String, EVSpan> explSpanStream = builder.stream(IN_TOPIC);
 
-    TimeWindowedKStream<String, EVSpan> windowedStream =
-        explSpanStream.groupByKey().windowedBy(TimeWindows.of(Duration.ofSeconds(10)));
+    TimeWindowedKStream<String, EVSpan> windowedStream = explSpanStream.groupByKey()
+        .windowedBy(TimeWindows.of(Duration.ofSeconds(10)).grace(Duration.ofSeconds(2)));
 
     KTable<Windowed<String>, Trace> messagesAggregatedByWindow =
         windowedStream.aggregate(Trace::new, (traceId, evSpan, trace) -> {
@@ -88,6 +88,7 @@ public class SpanToTraceReconstructorStream {
               if (includedSpan.getOperationName().equals(evSpan.getOperationName())) {
                 includedSpan.setRequestCount(includedSpan.getRequestCount() + 1);
 
+                // Take min startTime of similar spans for the span representative
                 if (includedSpan.getStartTime() > evSpanStartTime) {
                   // System.out.println(
                   // "Updated from start " + trace.getStartTime() + " to " + evSpanStartTime);
@@ -95,6 +96,7 @@ public class SpanToTraceReconstructorStream {
 
                 }
 
+                // Take max endTime of similar spans for the span representative
                 if (includedSpan.getEndTime() < evSpanEndTime) {
                   // System.out
                   // .println("Updated from end " + trace.getEndTime() + " to " + evSpanEndTime);
@@ -133,9 +135,6 @@ public class SpanToTraceReconstructorStream {
 
     KStream<Windowed<String>, Trace> spansWindowedStream = messagesAggregatedByWindow.toStream();
 
-    // spansWindowedStream.foreach((key, value) -> System.out
-    // .printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(), key));
-
     spansWindowedStream.foreach((key, value) -> {
 
       System.out.printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(), key);
@@ -149,9 +148,13 @@ public class SpanToTraceReconstructorStream {
 
     });
 
+    // spansWindowedStream.foreach((key, value) -> System.out
+    // .printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(), key));
+
     KStream<String, Trace> traceIdAndAllTracesStream = spansWindowedStream
         .map((KeyValueMapper<Windowed<String>, Trace, KeyValue<String, Trace>>) (key,
             value) -> new KeyValue<>(key.key(), value));
+
 
     // TODO Ordering in Trace
     // TODO implement count attribute in Trace -> number of similar traces

@@ -7,12 +7,10 @@ import io.opencensus.proto.dump.DumpSpans;
 import io.opencensus.proto.trace.v1.AttributeValue;
 import io.opencensus.proto.trace.v1.Span;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serdes.StringSerde;
 import org.apache.kafka.streams.KafkaStreams;
@@ -66,34 +64,22 @@ public class SpanTranslator {
           String spanId =
               BaseEncoding.base16().lowerCase().encode(s.getSpanId().toByteArray(), 0, 8);
 
-          // TODO Does this work?
           long startTime = Duration
               .ofSeconds(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toMillis();
           long endTime =
               Duration.ofSeconds(s.getEndTime().getSeconds(), s.getEndTime().getNanos()).toMillis();
           long duration = endTime - startTime;
 
-          // TODO use Duration.toNanos as shown below for start and end. Then, see if output of of trace-reconstructor
-          // is reasonable
+          // System.out.println(startTime + " und " + s.getStartTime().getSeconds());
 
-          // Testing time
-          Instant t =
-              Instant.ofEpochSecond(s.getStartTime().getSeconds(), s.getStartTime().getNanos());
-          Instant t1 =
-              Instant.ofEpochSecond(s.getEndTime().getSeconds(), s.getEndTime().getNanos());
-
-          System.out.println(startTime + " und " + Duration
-              .ofSeconds(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toNanos());
-
-          System.out.println(Duration
-              .ofNanos(Duration
-                  .ofSeconds(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toNanos())
-              .toMillis());
+          // System.out.println(Duration
+          // .ofNanos(Duration
+          // .ofSeconds(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toNanos())
+          // .toMillis());
 
           // System.out.println(duration + " und " + Duration.between(t, t1).getNano());
 
           Map<String, AttributeValue> attributes = s.getAttributes().getAttributeMapMap();
-
           String operationName = attributes.get("method_fqn").getStringValue().getValue();
           String hostname = attributes.get("host").getStringValue().getValue();
           String appName = attributes.get("application_name").getStringValue().getValue();
