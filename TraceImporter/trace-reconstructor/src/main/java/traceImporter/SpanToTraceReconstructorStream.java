@@ -40,6 +40,8 @@ public class SpanToTraceReconstructorStream {
 
     streamsConfig.put("schema.registry.url", "http://localhost:8081");
 
+    streamsConfig.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 2 * 1000);
+
     streamsConfig.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, StringSerde.class);
     streamsConfig.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class);
 
@@ -179,7 +181,7 @@ public class SpanToTraceReconstructorStream {
 
     TimeWindowedKStream<EVSpanKey, Trace> windowedStream =
         traceIdSpanStream.groupByKey(Grouped.with(keySpecificAvroSerde, valueSpecificAvroSerde))
-            .windowedBy(TimeWindows.of(Duration.ofSeconds(10)).grace(Duration.ofSeconds(2)));
+            .windowedBy(TimeWindows.of(Duration.ofSeconds(4)).grace(Duration.ofSeconds(2)));
 
     KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
         windowedStream.aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
