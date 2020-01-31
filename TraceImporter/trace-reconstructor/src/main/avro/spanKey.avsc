@@ -1,0 +1,31 @@
+{
+  "namespace": "traceImporter",
+  "type": "record",
+  "name": "EVSpanKey",
+  "fields": [  
+    {
+      "name": "spanList",
+      "type": {
+        "type": "array",
+        "items": {
+          "name": "EVSpanData",
+          "type": "record",
+          "fields": [            
+            {
+              "name": "operationName",
+              "type": "string"
+            },
+            {
+              "name": "hostname",
+              "type": "string"
+            },
+            {
+              "name": "appName",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

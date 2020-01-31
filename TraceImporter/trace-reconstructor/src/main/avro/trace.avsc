@@ -24,6 +24,10 @@
       "type": "int"
     },
     {
+      "name": "traceCount",
+      "type": "int"
+    },
+    {
       "name": "spanList",
       "type": {
         "type": "array",

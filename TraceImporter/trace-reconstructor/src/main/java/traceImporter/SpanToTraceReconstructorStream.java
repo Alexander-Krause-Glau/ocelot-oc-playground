@@ -3,16 +3,22 @@ package traceImporter;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes.StringSerde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.kstream.Grouped;
+import org.apache.kafka.streams.kstream.KGroupedStream;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.KTable;
-import org.apache.kafka.streams.kstream.KeyValueMapper;
+import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.TimeWindowedKStream;
 import org.apache.kafka.streams.kstream.TimeWindows;
 import org.apache.kafka.streams.kstream.Windowed;
@@ -49,11 +55,8 @@ public class SpanToTraceReconstructorStream {
 
     KStream<String, EVSpan> explSpanStream = builder.stream(IN_TOPIC);
 
-    TimeWindowedKStream<String, EVSpan> windowedStream = explSpanStream.groupByKey()
-        .windowedBy(TimeWindows.of(Duration.ofSeconds(10)).grace(Duration.ofSeconds(2)));
-
-    KTable<Windowed<String>, Trace> messagesAggregatedByWindow =
-        windowedStream.aggregate(Trace::new, (traceId, evSpan, trace) -> {
+    KTable<String, Trace> traceTable =
+        explSpanStream.groupByKey().aggregate(Trace::new, (traceId, evSpan, trace) -> {
 
           long evSpanStartTime = evSpan.getStartTime();
           long evSpanEndTime = evSpan.getEndTime();
@@ -66,6 +69,8 @@ public class SpanToTraceReconstructorStream {
             trace.setEndTime(evSpanEndTime);
             trace.setOverallRequestCount(1);
             trace.setDuration(evSpanEndTime - evSpanStartTime);
+
+            trace.setTraceCount(1);
 
             trace.setTraceId(evSpan.getTraceId());
           } else {
@@ -133,11 +138,78 @@ public class SpanToTraceReconstructorStream {
           return trace;
         });
 
-    KStream<Windowed<String>, Trace> spansWindowedStream = messagesAggregatedByWindow.toStream();
+    KStream<String, Trace> traceStream = traceTable.toStream();
 
-    spansWindowedStream.foreach((key, value) -> {
+    // TODO A serializer (key: org.apache.kafka.common.serialization.StringSerializer / value:
+    // io.confluent.kafka.streams.serdes.avro.SpecificAvroSerializer) is not compatible to the
+    // actual key or value type (key type:
+    // traceImporter.SpanToTraceReconstructorStream$SharedTraceData / value type:
+    // traceImporter.Trace). Change the default Serdes in StreamConfig or provide correct Serdes via
+    // method parameters.
 
-      System.out.printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(), key);
+    KStream<EVSpanKey, Trace> traceIdSpanStream = traceStream.flatMap((key, value) -> {
+
+      List<KeyValue<EVSpanKey, Trace>> result = new LinkedList<>();
+
+      List<EVSpanData> spanDataList = new ArrayList<>();
+
+      for (EVSpan span : value.getSpanList()) {
+        spanDataList
+            .add(new EVSpanData(span.getOperationName(), span.getHostname(), span.getAppName()));
+      }
+
+      EVSpanKey newKey = new EVSpanKey(spanDataList);
+
+      result.add(KeyValue.pair(newKey, value));
+      return result;
+    });
+
+    // traceIdSpanStream.foreach((key, value) -> {
+    // System.out.printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(),
+    // key.getSpanList().get(0).getOperationName());
+    // });
+
+    final Map<String, String> serdeConfig =
+        Collections.singletonMap("schema.registry.url", "http://localhost:8081");
+    // `Foo` and `Bar` are Java classes generated from Avro schemas
+    final Serde<EVSpanKey> keySpecificAvroSerde = new SpecificAvroSerde<>();
+    keySpecificAvroSerde.configure(serdeConfig, true); // `true` for record keys
+    final Serde<Trace> valueSpecificAvroSerde = new SpecificAvroSerde<>();
+    valueSpecificAvroSerde.configure(serdeConfig, false); // `false` for record values
+
+    TimeWindowedKStream<EVSpanKey, Trace> windowedStream =
+        traceIdSpanStream.groupByKey(Grouped.with(keySpecificAvroSerde, valueSpecificAvroSerde))
+            .windowedBy(TimeWindows.of(Duration.ofSeconds(10)).grace(Duration.ofSeconds(2)));
+
+    KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
+        windowedStream.aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
+
+          // TODO build reduced trace here
+
+          reducedTrace.setTraceId(trace.getTraceId());
+          reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
+
+          if (reducedTrace.getSpanList() == null) {
+            reducedTrace.setSpanList(trace.getSpanList());
+          }
+
+          return reducedTrace;
+        }, Materialized.with(keySpecificAvroSerde, valueSpecificAvroSerde));
+
+    KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
+
+    KStream<String, Trace> reducedIdTraceStream = reducedTraceStream.flatMap((key, value) -> {
+
+      List<KeyValue<String, Trace>> result = new LinkedList<>();
+
+      result.add(KeyValue.pair(value.getTraceId(), value));
+      return result;
+    });
+
+    reducedIdTraceStream.foreach((key, value) -> {
+
+      System.out.printf("New trace with %d spans (id: %s, traceCount: %d)\n",
+          value.getSpanList().size(), key, value.getTraceCount());
 
       List<EVSpan> list = value.getSpanList();
 
@@ -151,9 +223,9 @@ public class SpanToTraceReconstructorStream {
     // spansWindowedStream.foreach((key, value) -> System.out
     // .printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(), key));
 
-    KStream<String, Trace> traceIdAndAllTracesStream = spansWindowedStream
-        .map((KeyValueMapper<Windowed<String>, Trace, KeyValue<String, Trace>>) (key,
-            value) -> new KeyValue<>(key.key(), value));
+    // KStream<String, Trace> traceIdAndReducedTracesStream = reducedTraceStream
+    // .map((KeyValueMapper<Windowed<EVSpanKey>, Trace, KeyValue<String, Trace>>) (key,
+    // value) -> new KeyValue<>(value.getTraceId(), value));
 
 
     // TODO Ordering in Trace
@@ -161,7 +233,8 @@ public class SpanToTraceReconstructorStream {
     // TODO Reduce traceIdAndAllTracesStream to similiar traces stream (map and reduce)
     // use hash for trace https://docs.confluent.io/current/streams/quickstart.html#purpose
 
-    traceIdAndAllTracesStream.to(OUT_TOPIC);
+    reducedIdTraceStream.to(OUT_TOPIC);
+    // traceStream.to(OUT_TOPIC);
 
 
     final KafkaStreams streams = new KafkaStreams(builder.build(), streamsConfig);
@@ -169,6 +242,17 @@ public class SpanToTraceReconstructorStream {
     streams.start();
 
     Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
+  }
+
+  public EVSpanKey createEVSpanKeyForTrace(Trace t) {
+    List<EVSpanData> spanDataList = new ArrayList<>();
+
+    for (EVSpan span : t.getSpanList()) {
+      spanDataList
+          .add(new EVSpanData(span.getOperationName(), span.getHostname(), span.getAppName()));
+    }
+
+    return new EVSpanKey(spanDataList);
   }
 
 }
