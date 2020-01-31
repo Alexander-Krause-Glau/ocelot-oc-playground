@@ -47,7 +47,7 @@ public class SpanToTraceReconstructorStream {
 
     streamsConfig.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG,
         EVSpanTimestampKafkaExtractor.class);
-    streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "explorviz-span-batching");
+    streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "trace-reconstruction");
   }
 
 

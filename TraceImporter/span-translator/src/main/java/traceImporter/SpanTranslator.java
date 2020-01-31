@@ -33,7 +33,7 @@ public class SpanTranslator {
   public SpanTranslator() {
 
     streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9091");
-    streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "span-batching");
+    streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "span-translating");
 
     streamsConfig.put("schema.registry.url", "http://localhost:8081");
 
