@@ -74,6 +74,8 @@ public class SpanToTraceReconstructorStream {
 
             trace.setTraceCount(1);
 
+            // set initial trace id - do not change, since this is the major key for kafka
+            // partitioning
             trace.setTraceId(evSpan.getTraceId());
           } else {
 
@@ -188,7 +190,9 @@ public class SpanToTraceReconstructorStream {
 
           // TODO build reduced trace here
 
-          reducedTrace.setTraceId(trace.getTraceId());
+          if (reducedTrace.getTraceId() == null) {
+            reducedTrace.setTraceId(trace.getTraceId());
+          }
           reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
 
           if (reducedTrace.getSpanList() == null) {
