@@ -53,6 +53,7 @@ public class SpanToTraceReconstructorStream {
 
   public void run() {
 
+
     StreamsBuilder builder = new StreamsBuilder();
 
     KStream<String, EVSpan> explSpanStream = builder.stream(IN_TOPIC);
