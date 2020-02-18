@@ -166,7 +166,7 @@ public class SpanToTraceReconstructorStream {
                 // TODO build reduced trace here
 
                 if (reducedTrace.getTraceId() == null) {
-                    reducedTrace.setTraceId(trace.getTraceId());
+                  return trace;
                 }
                 reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
 
