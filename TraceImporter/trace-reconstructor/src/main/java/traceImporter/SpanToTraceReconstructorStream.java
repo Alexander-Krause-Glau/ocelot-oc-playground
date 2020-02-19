@@ -183,6 +183,7 @@ public class SpanToTraceReconstructorStream {
 
 
     // TODO Ordering in Trace
+    reducedIdTraceStream.peek((key, trace) -> trace.getSpanList().sort(Comparator.comparingLong(EVSpan::getStartTime)));
     // TODO implement count attribute in Trace -> number of similar traces
     // TODO Reduce traceIdAndAllTracesStream to similiar traces stream (map and reduce)
     // use hash for trace https://docs.confluent.io/current/streams/quickstart.html#purpose
