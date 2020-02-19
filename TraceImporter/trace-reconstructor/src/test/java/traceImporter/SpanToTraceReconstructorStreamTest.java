@@ -51,8 +51,7 @@ class SpanToTraceReconstructorStreamTest {
 
     Properties props = new Properties();
     props.put(StreamsConfig.APPLICATION_ID_CONFIG, "test");
-    props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG,
-        KafkaConfig.TIMESTAMP_EXTRACTOR);
+    props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, KafkaConfig.TIMESTAMP_EXTRACTOR);
     props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "dummy:1234");
 
     Map<String, String> conf =
@@ -194,13 +193,13 @@ class SpanToTraceReconstructorStreamTest {
   void testWindowing() {
     final String traceId = "testtraceid";
 
-    long start1 = System.nanoTime();
-    long end1 = System.nanoTime() + 2000L;
+    long start1 = System.currentTimeMillis();
+    long end1 = System.currentTimeMillis();
 
-    long start2 = end1 + 1000L;
-    long end2 = start2 + 2000L;
+    long start2 = end1 + 100L;
+    long end2 = start2 + 100L;
 
-    long start3 = start1 + Duration.ofSeconds(8).toNanos();
+    long start3 = start1 + Duration.ofSeconds(50).toMillis();
     long end3 = start3 + 5000L;
 
 
@@ -217,9 +216,9 @@ class SpanToTraceReconstructorStreamTest {
                     "OpC", 1, "samplehost", "sampleapp");
 
 
-    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
-    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
-    inputTopic.pipeInput(evSpan3.getTraceId(), evSpan3);
+    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1, start1);
+    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2, start2);
+    inputTopic.pipeInput(evSpan3.getTraceId(), evSpan3, start3);
 
 
     // First two Spans should be in a window. However, a record should be created for each update.

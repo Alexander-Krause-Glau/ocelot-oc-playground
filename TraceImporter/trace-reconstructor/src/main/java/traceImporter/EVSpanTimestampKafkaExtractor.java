@@ -1,6 +1,9 @@
 package traceImporter;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.streams.processor.TimestampExtractor;
 
@@ -12,8 +15,9 @@ public class EVSpanTimestampKafkaExtractor implements TimestampExtractor {
     final EVSpan span = (EVSpan) record.value();
 
     if (span != null) {
-      timestamp = Duration.ofNanos(span.getStartTime()).toMillis();
-      System.out.println("TIME: " + timestamp + "("+Duration.ofNanos(span.getStartTime()).toNanos()+")");
+      //timestamp = Duration.ofNanos(span.getStartTime()).toMillis();
+      //timestamp = Instant.ofEpochMilli(span.getStartTime()).toEpochMilli();
+      return span.getStartTime();
     }
     if (timestamp < 0) {
       // Invalid timestamp! Attempt to estimate a new timestamp,

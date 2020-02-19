@@ -9,6 +9,7 @@ import io.opencensus.proto.trace.v1.AttributeValue;
 import io.opencensus.proto.trace.v1.Span;
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -76,6 +77,8 @@ public class SpanTranslator {
 
           long startTime = Duration
               .ofSeconds(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toNanos();
+
+
 
           long endTime =
               Duration.ofSeconds(s.getEndTime().getSeconds(), s.getEndTime().getNanos()).toNanos();
