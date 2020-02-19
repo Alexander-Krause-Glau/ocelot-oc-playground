@@ -2,7 +2,6 @@ package traceImporter;
 
 import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
-
 import java.io.IOException;
 
 public class Main {
@@ -13,6 +12,6 @@ public class Main {
     SchemaRegistryClient src = new CachedSchemaRegistryClient(KafkaConfig.REGISTRY_URL, 20);
 
     new SpanToTraceReconstructorStream(src).run();
-    //new SpanSingleProducerStream().run();
+    // new SpanSingleProducerStream().run();
   }
 }

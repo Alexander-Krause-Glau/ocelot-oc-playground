@@ -1,9 +1,8 @@
 package traceImporter;
 
+import java.time.Duration;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.streams.processor.TimestampExtractor;
-
-import java.time.Duration;
 
 public class EVSpanTimestampKafkaExtractor implements TimestampExtractor {
 
