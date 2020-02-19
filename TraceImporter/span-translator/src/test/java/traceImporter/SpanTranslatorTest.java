@@ -20,6 +20,7 @@ import org.apache.kafka.streams.TestInputTopic;
 import org.apache.kafka.streams.TestOutputTopic;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.TopologyTestDriver;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -63,6 +64,10 @@ class SpanTranslatorTest {
 
   }
 
+  @AfterEach
+  void tearDown() {
+    driver.close();
+  }
 
   public byte[] getDumpSpan() throws IOException {
     // Byte array containing a dumpspan of 50 spans
