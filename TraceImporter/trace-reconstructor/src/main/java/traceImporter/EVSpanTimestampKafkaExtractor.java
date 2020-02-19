@@ -13,6 +13,7 @@ public class EVSpanTimestampKafkaExtractor implements TimestampExtractor {
 
     if (span != null) {
       timestamp = Duration.ofNanos(span.getStartTime()).toMillis();
+      System.out.println("TIME: " + timestamp + "("+Duration.ofNanos(span.getStartTime()).toNanos()+")");
     }
     if (timestamp < 0) {
       // Invalid timestamp! Attempt to estimate a new timestamp,
@@ -23,6 +24,8 @@ public class EVSpanTimestampKafkaExtractor implements TimestampExtractor {
         return System.currentTimeMillis();
       }
     }
+
+
     return timestamp;
   }
 

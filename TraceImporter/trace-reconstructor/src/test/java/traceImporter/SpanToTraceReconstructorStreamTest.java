@@ -1,6 +1,5 @@
 package traceImporter;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
@@ -23,6 +22,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 class SpanToTraceReconstructorStreamTest {
 
@@ -76,32 +77,71 @@ class SpanToTraceReconstructorStreamTest {
   }
 
 
+  /**
+   * Tests whether multiple spans with the same operation name belonging to the same trace are reduced to a single span
+   * with an updated {@link EVSpan#requestCount}
+   */
   @Test
-  void testWindowing() throws InterruptedException {
-    // Push two spans with the same trace id and operation name to the input topic with a gap of 5
-    // seconds
+  void testSpanDeduplication() {
 
     final String traceId = "testtraceid";
     final String operationName = "OpName";
 
-    long start1 = Duration.ofDays(128).toNanos();
-    long end1 = start1 + Duration.ofMillis(20).toNanos();
+    long start1 = 10L;
+    long end1 = 20L;
 
-    long start2 = start1 + Duration.ofMillis(1).toNanos();
-    long end2 = start2 + Duration.ofMillis(120).toNanos();
-
+    long start2 = 40L;
+    long end2 = 80L;
 
 
     EVSpan evSpan1 = new EVSpan("1", traceId, start1, end1, end1 - start1, operationName, 1,
-        "samplehost", "sampleapp");
+            "samplehost", "sampleapp");
     EVSpan evSpan2 = new EVSpan("2", traceId, start2, end2, end2 - start2, operationName, 1,
-        "samplehost", "sampleapp");
+            "samplehost", "sampleapp");
+
+
+    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
+    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+
+
+    List<KeyValue<String, Trace>> records = outputTopic.readKeyValuesToList();
+
+    assertEquals(2, records.size());
+
+    Assertions.assertEquals(traceId, records.get(0).key);
+    Assertions.assertEquals(traceId, records.get(1).key);
+
+    // Trace is "completed" after two updates, thus take the second record
+    Trace trace = records.get(1).value;
+
+    assertEquals(start1, trace.getStartTime());
+    assertEquals(end2, trace.getEndTime());
+
+    // Deduplication
+    assertEquals(1, trace.getSpanList().size());
+    assertEquals(2, trace.getSpanList().get(0).getRequestCount());
+
+  }
+
+
+  /**
+   * Tests if a trace's span list is sorted w.r.t. to the start time of each span
+   */
+  @Test
+  void testOrdering() {
+
+    final String traceId = "testtraceid";
+
+    EVSpan evSpan1 = new EVSpan("1", traceId, 10L, 20L, 10L, "OpB", 1,
+            "samplehost", "sampleapp");
+    EVSpan evSpan2 = new EVSpan("2", traceId, 5L, 10L, 5L, "OpA", 1,
+            "samplehost", "sampleapp");
 
     // This Span's timestamp is 7 seconds later than the first thus closing the window containing
     // the first two spans
     EVSpan windowTerminationSpan =
-        new EVSpan("212", "sometrace", start1 + Duration.ofSeconds(4 + 3).toNanos(), 1L, 2L,
-            "SomeOperation", 1, "samplehost", "sampleapp");
+            new EVSpan("212", "sometrace", Duration.ofSeconds(7).toNanos(), 1L, 2L,
+                    "SomeOperation", 1, "samplehost", "sampleapp");
 
 
     inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
@@ -110,27 +150,141 @@ class SpanToTraceReconstructorStreamTest {
 
 
     assertEquals(3, outputTopic.getQueueSize());
+    Trace trace = outputTopic.readKeyValuesToList().get(1).value;
+
+    // Trace must contain both spans
+    assertEquals(2, trace.getSpanList().size());
+
+    // Spans in span list must be sorted by start time
+    assertTrue(trace.getSpanList().get(0).getStartTime() < trace.getSpanList().get(1).getStartTime());
+
+  }
+
+
+  /**
+   * Tests whether a correct trace is generated based on only a single span
+   */
+  @Test
+  void testTraceCreation() {
+    final String traceId = "testtraceid";
+
+    EVSpan span = new EVSpan("1", traceId, 10L, 20L, 10L, "OpB", 1,
+            "samplehost", "sampleapp");
+    inputTopic.pipeInput(span.getTraceId(), span);
+
+    Trace trace = outputTopic.readValue();
+    assertNotNull(trace);
+
+    assertEquals(traceId, trace.getTraceId());
+    assertEquals(span.getDuration(), trace.getDuration());
+    assertEquals(span.getStartTime(), trace.getStartTime());
+    assertEquals(span.getEndTime(), trace.getEndTime());
+    assertEquals(1, trace.getTraceCount());
+    assertEquals(1, trace.getSpanList().size());
+
+  }
+
+
+  /**
+   * Tests the windowing of traces.
+   * Spans with the same trace id in close temporal proximity should be aggregated in the same trace.
+   * If another span with the same trace id arrives later, it should not be included in the same trace.
+   */
+  @Test
+  void testWindowing() {
+    final String traceId = "testtraceid";
+
+    long start1 = System.nanoTime();
+    long end1 = System.nanoTime() + 2000L;
+
+    long start2 = end1 + 1000L;
+    long end2 = start2 + 2000L;
+
+    long start3 = start1 + Duration.ofSeconds(8).toNanos();
+    long end3 = start3 + 5000L;
+
+
+
+    EVSpan evSpan1 = new EVSpan("1", traceId, start1, end1, end1 - start1, "OpA", 1,
+            "samplehost", "sampleapp");
+    EVSpan evSpan2 = new EVSpan("2", traceId, start2, end2, end2 - start2, "OpB", 1,
+            "samplehost", "sampleapp");
+
+    // This Span's timestamp is 7 seconds later than the first thus closing the window containing
+    // the first two spans
+    EVSpan evSpan3 =
+            new EVSpan("212", traceId, start3, end3, end3-start3,
+                    "OpC", 1, "samplehost", "sampleapp");
+
+
+    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
+    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+    inputTopic.pipeInput(evSpan3.getTraceId(), evSpan3);
+
+
+    // First two Spans should be in a window. However, a record should be created for each update.
+    assertEquals(3, outputTopic.getQueueSize());
 
     List<KeyValue<String, Trace>> records = outputTopic.readKeyValuesToList();
 
-    // First two Spans should be in a window. However, a record should be created for each update.
+    // First Trace should encompass first two spans
+    Trace trace = records.get(1).value;
+    assertEquals(start1, trace.getStartTime());
+    assertEquals(end2, trace.getEndTime());
+    assertEquals(1, trace.getTraceCount());
+    assertEquals(2, trace.getSpanList().size());
 
-    Assertions.assertEquals(traceId, records.get(0).key);
-    Assertions.assertEquals(traceId, records.get(1).key);
+    // Second trace should only include the last span
+    Trace trace2 = records.get(2).value;
+    System.out.println(trace2);
+    assertEquals(start3, trace2.getStartTime());
+    assertEquals(end3, trace2.getEndTime());
+    assertEquals(1, trace2.getTraceCount());
+    assertEquals(1, trace2.getSpanList().size());
+  }
 
-    Trace firstUpdate = records.get(0).value;
-    System.out.println(firstUpdate);
-    Trace secondsUpdate = records.get(1).value;
-    System.out.println(secondsUpdate);
 
-    assertEquals(start1, firstUpdate.getStartTime());
-    assertEquals(end1, firstUpdate.getEndTime());
-    assertEquals(1, firstUpdate.getTraceCount());
 
-    assertEquals(start1, secondsUpdate.getStartTime());
-    assertEquals(end2, secondsUpdate.getEndTime());
-    assertEquals(2, secondsUpdate.getTraceCount());
-    assertEquals(2, secondsUpdate.getSpanList().get(0).getRequestCount());
+  /**
+   * Spans with different trace id that are otherwise similar, should be reduced to a single trace
+   */
+  @Test
+  void testTraceReduction() {
+    final String operationName = "OpName";
+
+    long start1 = 10L;
+    long end1 = 20L;
+
+    long start2 = 40L;
+    long end2 = 80L;
+
+
+    EVSpan evSpan1 = new EVSpan("1", "trace1", start1, end1, end1 - start1, operationName, 1,
+            "samplehost", "sampleapp");
+    EVSpan evSpan2 = new EVSpan("2", "trace2", start2, end2, end2 - start2, operationName, 265,
+            "samplehost", "sampleapp");
+
+
+    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
+    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+
+
+    List<KeyValue<String, Trace>> records = outputTopic.readKeyValuesToList();
+
+    assertEquals(2, records.size());
+
+    // Trace is "completed" after two updates, thus take the second record
+    Trace trace = records.get(1).value;
+
+    assertEquals(start1, trace.getStartTime());
+    assertEquals(end2, trace.getEndTime());
+
+    // Reduction
+    assertEquals(2, trace.getTraceCount());
+
+    // Only the span list of the latest trace in the reduction should be used
+    assertEquals(1, trace.getSpanList().size());
+    assertEquals(265, trace.getSpanList().get(0).getRequestCount());
 
   }
 

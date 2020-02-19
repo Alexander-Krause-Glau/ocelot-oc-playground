@@ -23,6 +23,7 @@ import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.TimeWindowedKStream;
 import org.apache.kafka.streams.kstream.TimeWindows;
 import org.apache.kafka.streams.kstream.Windowed;
+import org.apache.kafka.streams.processor.TimestampExtractor;
 
 /**
  * Collects spans for 10 seconds, grouped by the trace id, and forwards the resulting batch to the
@@ -141,7 +142,6 @@ public class SpanToTraceReconstructorStream {
 
     KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
             windowedStream.aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
-
               if (reducedTrace.getTraceId() == null) {
                 reducedTrace = trace;
               } else {
