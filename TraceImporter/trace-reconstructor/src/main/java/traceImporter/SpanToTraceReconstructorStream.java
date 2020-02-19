@@ -115,54 +115,49 @@ public class SpanToTraceReconstructorStream {
 
     KStream<String, Trace> traceStream = traceTable.toStream();
 
-    KStream<EVSpanKey, Trace> traceIdSpanStream = traceStream.flatMap((key, value) -> {
+    // Map traces to a new key that resembles all included spans
+    KStream<EVSpanKey, Trace> traceIdSpanStream = traceStream.flatMap((key, trace) -> {
 
       List<KeyValue<EVSpanKey, Trace>> result = new LinkedList<>();
 
       List<EVSpanData> spanDataList = new ArrayList<>();
 
-      for (EVSpan span : value.getSpanList()) {
+      for (EVSpan span : trace.getSpanList()) {
         spanDataList
-            .add(new EVSpanData(span.getOperationName(), span.getHostname(), span.getAppName()));
+                .add(new EVSpanData(span.getOperationName(), span.getHostname(), span.getAppName()));
       }
 
       EVSpanKey newKey = new EVSpanKey(spanDataList);
 
-      result.add(KeyValue.pair(newKey, value));
+      result.add(KeyValue.pair(newKey, trace));
       return result;
     });
 
 
-
+    // Aggregate traces in 4s intervals
     TimeWindowedKStream<EVSpanKey, Trace> windowedStream =
-        traceIdSpanStream.groupByKey(Grouped.with(getAvroSerde(true), getAvroSerde(false)))
-            .windowedBy(TimeWindows.of(Duration.ofSeconds(4)).grace(Duration.ofSeconds(2)));
+            traceIdSpanStream.groupByKey(Grouped.with(getAvroSerde(true), getAvroSerde(false)))
+                    .windowedBy(TimeWindows.of(Duration.ofSeconds(4)).grace(Duration.ofSeconds(2)));
 
     KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
-        windowedStream.aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
+            windowedStream.aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
 
-          // TODO build reduced trace here
-          if (reducedTrace.getTraceId() == null) {
-            /*
-             * TODO: Bug Updated traces are ignored but more recent traces may have other startTime
-             * or endTime values
-             */
-            reducedTrace = trace;
-          } else {
-            reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
-          }
+              if (reducedTrace.getTraceId() == null) {
+                reducedTrace = trace;
+              } else {
+                reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
+                // Use the Span list of the latest trace in the group
+                // Do so since span list only grow but never loose elements
+                reducedTrace.setSpanList(trace.getSpanList());
 
+                // Update start and end time of the trace
 
-          /*
-           * TODO: Bug Now only the span list of the first trace is used. More recent traces will
-           * have span lists with updated requestCount values
-           */
-          if (reducedTrace.getSpanList() == null) {
-            reducedTrace.setSpanList(trace.getSpanList());
-          }
+                reducedTrace.setStartTime(Math.min(trace.getStartTime(), reducedTrace.getStartTime()));
+                reducedTrace.setEndTime(Math.max(trace.getEndTime(), reducedTrace.getEndTime()));
+              }
 
-          return reducedTrace;
-        }, Materialized.with(getAvroSerde(true), getAvroSerde(false)));
+              return reducedTrace;
+            }, Materialized.with(getAvroSerde(true), getAvroSerde(false)));
     // .suppress(Suppressed.untilWindowCloses(Suppressed.BufferConfig.unbounded()));
 
     KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
@@ -181,11 +176,10 @@ public class SpanToTraceReconstructorStream {
 
       list.forEach((val) -> {
         System.out.println(val.getStartTime() + " : " + val.getEndTime() + " für "
-            + val.getOperationName() + " mit Anzahl " + val.getRequestCount());
+                + val.getOperationName() + " mit Anzahl " + val.getRequestCount());
       });
 
     });
-
 
 
     // TODO Ordering in Trace
@@ -194,7 +188,7 @@ public class SpanToTraceReconstructorStream {
     // use hash for trace https://docs.confluent.io/current/streams/quickstart.html#purpose
 
     reducedIdTraceStream.to(KafkaConfig.OUT_TOPIC,
-        Produced.with(Serdes.String(), getAvroSerde(false)));
+            Produced.with(Serdes.String(), getAvroSerde(false)));
     return builder.build();
   }
 
@@ -210,8 +204,8 @@ public class SpanToTraceReconstructorStream {
   private <T extends SpecificRecord> SpecificAvroSerde<T> getAvroSerde(boolean forKey) {
     final SpecificAvroSerde<T> valueSerde = new SpecificAvroSerde<>(registryClient);
     valueSerde.configure(
-        Map.of(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, "http://localhost:8081"),
-        forKey);
+            Map.of(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, "http://localhost:8081"),
+            forKey);
     return valueSerde;
   }
 

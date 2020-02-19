@@ -129,8 +129,8 @@ class SpanToTraceReconstructorStreamTest {
 
     assertEquals(start1, secondsUpdate.getStartTime());
     assertEquals(end2, secondsUpdate.getEndTime());
-    assertEquals(2, firstUpdate.getTraceCount());
-    assertEquals(2, firstUpdate.getSpanList().get(0).getRequestCount());
+    assertEquals(2, secondsUpdate.getTraceCount());
+    assertEquals(2, secondsUpdate.getSpanList().get(0).getRequestCount());
 
   }
 
