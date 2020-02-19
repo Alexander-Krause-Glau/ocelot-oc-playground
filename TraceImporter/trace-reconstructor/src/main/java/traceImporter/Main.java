@@ -6,12 +6,11 @@ import java.io.IOException;
 
 public class Main {
 
-  public static void main(String[] args) throws IOException, InterruptedException {
+  public static void main(final String[] args) throws IOException, InterruptedException {
 
     // TODO set reasonable value
-    SchemaRegistryClient src = new CachedSchemaRegistryClient(KafkaConfig.REGISTRY_URL, 20);
+    final SchemaRegistryClient src = new CachedSchemaRegistryClient(KafkaConfig.REGISTRY_URL, 20);
 
     new SpanToTraceReconstructorStream(src).run();
-    // new SpanSingleProducerStream().run();
   }
 }

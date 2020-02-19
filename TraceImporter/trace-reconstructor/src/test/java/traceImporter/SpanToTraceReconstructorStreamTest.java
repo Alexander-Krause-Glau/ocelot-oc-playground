@@ -1,5 +1,8 @@
 package traceImporter;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
@@ -19,11 +22,8 @@ import org.apache.kafka.streams.TestOutputTopic;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.TopologyTestDriver;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class SpanToTraceReconstructorStreamTest {
 
@@ -35,36 +35,37 @@ class SpanToTraceReconstructorStreamTest {
   @BeforeEach
   void setUp() throws IOException, RestClientException {
 
-    MockSchemaRegistryClient mockSRC = new MockSchemaRegistryClient();
+    final MockSchemaRegistryClient mockSRC = new MockSchemaRegistryClient();
     mockSRC.register(KafkaConfig.OUT_TOPIC + "-value", Trace.SCHEMA$);
     mockSRC.register(KafkaConfig.IN_TOPIC + "-key", EVSpanKey.SCHEMA$);
     mockSRC.register(KafkaConfig.IN_TOPIC + "-value", EVSpan.SCHEMA$);
     // mockSRC.register("STREAM-AGGREGATE-STATE-STORE-0000000005-repartition-key",
     // EVSpanKey.SCHEMA$);
 
-    Topology topo = (new SpanToTraceReconstructorStream(mockSRC)).getTopology();
+    final Topology topo = new SpanToTraceReconstructorStream(mockSRC).getTopology();
     System.out.println(topo.describe().toString());
 
     final Serializer<EVSpan> evSpanSerializer = new SpecificAvroSerde<EVSpan>(mockSRC).serializer();
     final Deserializer<Trace> traceDeserializer =
         new SpecificAvroSerde<Trace>(mockSRC).deserializer();
 
-    Properties props = new Properties();
+    final Properties props = new Properties();
     props.put(StreamsConfig.APPLICATION_ID_CONFIG, "test");
-    props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, KafkaConfig.TIMESTAMP_EXTRACTOR);
+    props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG,
+        KafkaConfig.TIMESTAMP_EXTRACTOR);
     props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "dummy:1234");
 
-    Map<String, String> conf =
+    final Map<String, String> conf =
         Map.of(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, "http://dummy");
     evSpanSerializer.configure(conf, false);
 
     traceDeserializer.configure(conf, false);
 
-    testDriver = new TopologyTestDriver(topo, props);
+    this.testDriver = new TopologyTestDriver(topo, props);
 
-    inputTopic = testDriver.createInputTopic(KafkaConfig.IN_TOPIC, Serdes.String().serializer(),
-        evSpanSerializer);
-    outputTopic = testDriver.createOutputTopic(KafkaConfig.OUT_TOPIC,
+    this.inputTopic = this.testDriver.createInputTopic(KafkaConfig.IN_TOPIC,
+        Serdes.String().serializer(), evSpanSerializer);
+    this.outputTopic = this.testDriver.createOutputTopic(KafkaConfig.OUT_TOPIC,
         Serdes.String().deserializer(), traceDeserializer);
 
     mockSRC.getAllSubjects().forEach(System.out::println);
@@ -72,13 +73,13 @@ class SpanToTraceReconstructorStreamTest {
 
   @AfterEach
   void afterEach() {
-    testDriver.close();
+    this.testDriver.close();
   }
 
 
   /**
-   * Tests whether multiple spans with the same operation name belonging to the same trace are reduced to a single span
-   * with an updated {@link EVSpan#requestCount}
+   * Tests whether multiple spans with the same operation name belonging to the same trace are
+   * reduced to a single span with an updated {@link EVSpan#requestCount}
    */
   @Test
   void testSpanDeduplication() {
@@ -86,32 +87,32 @@ class SpanToTraceReconstructorStreamTest {
     final String traceId = "testtraceid";
     final String operationName = "OpName";
 
-    long start1 = 10L;
-    long end1 = 20L;
+    final long start1 = 10L;
+    final long end1 = 20L;
 
-    long start2 = 40L;
-    long end2 = 80L;
-
-
-    EVSpan evSpan1 = new EVSpan("1", traceId, start1, end1, end1 - start1, operationName, 1,
-            "samplehost", "sampleapp");
-    EVSpan evSpan2 = new EVSpan("2", traceId, start2, end2, end2 - start2, operationName, 1,
-            "samplehost", "sampleapp");
+    final long start2 = 40L;
+    final long end2 = 80L;
 
 
-    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
-    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+    final EVSpan evSpan1 = new EVSpan("1", traceId, start1, end1, end1 - start1, operationName, 1,
+        "samplehost", "sampleapp");
+    final EVSpan evSpan2 = new EVSpan("2", traceId, start2, end2, end2 - start2, operationName, 1,
+        "samplehost", "sampleapp");
 
 
-    List<KeyValue<String, Trace>> records = outputTopic.readKeyValuesToList();
+    this.inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
+    this.inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+
+
+    final List<KeyValue<String, Trace>> records = this.outputTopic.readKeyValuesToList();
 
     assertEquals(2, records.size());
 
-    Assertions.assertEquals(traceId, records.get(0).key);
-    Assertions.assertEquals(traceId, records.get(1).key);
+    assertEquals(traceId, records.get(0).key);
+    assertEquals(traceId, records.get(1).key);
 
     // Trace is "completed" after two updates, thus take the second record
-    Trace trace = records.get(1).value;
+    final Trace trace = records.get(1).value;
 
     assertEquals(start1, trace.getStartTime());
     assertEquals(end2, trace.getEndTime());
@@ -131,31 +132,31 @@ class SpanToTraceReconstructorStreamTest {
 
     final String traceId = "testtraceid";
 
-    EVSpan evSpan1 = new EVSpan("1", traceId, 10L, 20L, 10L, "OpB", 1,
-            "samplehost", "sampleapp");
-    EVSpan evSpan2 = new EVSpan("2", traceId, 5L, 10L, 5L, "OpA", 1,
-            "samplehost", "sampleapp");
+    final EVSpan evSpan1 =
+        new EVSpan("1", traceId, 10L, 20L, 10L, "OpB", 1, "samplehost", "sampleapp");
+    final EVSpan evSpan2 =
+        new EVSpan("2", traceId, 5L, 10L, 5L, "OpA", 1, "samplehost", "sampleapp");
 
     // This Span's timestamp is 7 seconds later than the first thus closing the window containing
     // the first two spans
-    EVSpan windowTerminationSpan =
-            new EVSpan("212", "sometrace", Duration.ofSeconds(7).toNanos(), 1L, 2L,
-                    "SomeOperation", 1, "samplehost", "sampleapp");
+    final EVSpan windowTerminationSpan = new EVSpan("212", "sometrace",
+        Duration.ofSeconds(7).toNanos(), 1L, 2L, "SomeOperation", 1, "samplehost", "sampleapp");
 
 
-    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
-    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
-    inputTopic.pipeInput(windowTerminationSpan.getTraceId(), windowTerminationSpan);
+    this.inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
+    this.inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+    this.inputTopic.pipeInput(windowTerminationSpan.getTraceId(), windowTerminationSpan);
 
 
-    assertEquals(3, outputTopic.getQueueSize());
-    Trace trace = outputTopic.readKeyValuesToList().get(1).value;
+    assertEquals(3, this.outputTopic.getQueueSize());
+    final Trace trace = this.outputTopic.readKeyValuesToList().get(1).value;
 
     // Trace must contain both spans
     assertEquals(2, trace.getSpanList().size());
 
     // Spans in span list must be sorted by start time
-    assertTrue(trace.getSpanList().get(0).getStartTime() < trace.getSpanList().get(1).getStartTime());
+    assertTrue(
+        trace.getSpanList().get(0).getStartTime() < trace.getSpanList().get(1).getStartTime());
 
   }
 
@@ -167,11 +168,11 @@ class SpanToTraceReconstructorStreamTest {
   void testTraceCreation() {
     final String traceId = "testtraceid";
 
-    EVSpan span = new EVSpan("1", traceId, 10L, 20L, 10L, "OpB", 1,
-            "samplehost", "sampleapp");
-    inputTopic.pipeInput(span.getTraceId(), span);
+    final EVSpan span =
+        new EVSpan("1", traceId, 10L, 20L, 10L, "OpB", 1, "samplehost", "sampleapp");
+    this.inputTopic.pipeInput(span.getTraceId(), span);
 
-    Trace trace = outputTopic.readValue();
+    final Trace trace = this.outputTopic.readValue();
     assertNotNull(trace);
 
     assertEquals(traceId, trace.getTraceId());
@@ -185,56 +186,55 @@ class SpanToTraceReconstructorStreamTest {
 
 
   /**
-   * Tests the windowing of traces.
-   * Spans with the same trace id in close temporal proximity should be aggregated in the same trace.
-   * If another span with the same trace id arrives later, it should not be included in the same trace.
+   * Tests the windowing of traces. Spans with the same trace id in close temporal proximity should
+   * be aggregated in the same trace. If another span with the same trace id arrives later, it
+   * should not be included in the same trace.
    */
   @Test
   void testWindowing() {
     final String traceId = "testtraceid";
 
-    long start1 = System.currentTimeMillis();
-    long end1 = System.currentTimeMillis();
+    final long start1 = System.currentTimeMillis();
+    final long end1 = System.currentTimeMillis();
 
-    long start2 = end1 + 100L;
-    long end2 = start2 + 100L;
+    final long start2 = end1 + 100L;
+    final long end2 = start2 + 100L;
 
-    long start3 = start1 + Duration.ofSeconds(50).toMillis();
-    long end3 = start3 + 5000L;
+    final long start3 = start1 + Duration.ofSeconds(50).toMillis();
+    final long end3 = start3 + 5000L;
 
 
 
-    EVSpan evSpan1 = new EVSpan("1", traceId, start1, end1, end1 - start1, "OpA", 1,
-            "samplehost", "sampleapp");
-    EVSpan evSpan2 = new EVSpan("2", traceId, start2, end2, end2 - start2, "OpB", 1,
-            "samplehost", "sampleapp");
+    final EVSpan evSpan1 =
+        new EVSpan("1", traceId, start1, end1, end1 - start1, "OpA", 1, "samplehost", "sampleapp");
+    final EVSpan evSpan2 =
+        new EVSpan("2", traceId, start2, end2, end2 - start2, "OpB", 1, "samplehost", "sampleapp");
 
     // This Span's timestamp is 7 seconds later than the first thus closing the window containing
     // the first two spans
-    EVSpan evSpan3 =
-            new EVSpan("212", traceId, start3, end3, end3-start3,
-                    "OpC", 1, "samplehost", "sampleapp");
+    final EVSpan evSpan3 = new EVSpan("212", traceId, start3, end3, end3 - start3, "OpC", 1,
+        "samplehost", "sampleapp");
 
 
-    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1, start1);
-    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2, start2);
-    inputTopic.pipeInput(evSpan3.getTraceId(), evSpan3, start3);
+    this.inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1, start1);
+    this.inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2, start2);
+    this.inputTopic.pipeInput(evSpan3.getTraceId(), evSpan3, start3);
 
 
     // First two Spans should be in a window. However, a record should be created for each update.
-    assertEquals(3, outputTopic.getQueueSize());
+    assertEquals(3, this.outputTopic.getQueueSize());
 
-    List<KeyValue<String, Trace>> records = outputTopic.readKeyValuesToList();
+    final List<KeyValue<String, Trace>> records = this.outputTopic.readKeyValuesToList();
 
     // First Trace should encompass first two spans
-    Trace trace = records.get(1).value;
+    final Trace trace = records.get(1).value;
     assertEquals(start1, trace.getStartTime());
     assertEquals(end2, trace.getEndTime());
     assertEquals(1, trace.getTraceCount());
     assertEquals(2, trace.getSpanList().size());
 
     // Second trace should only include the last span
-    Trace trace2 = records.get(2).value;
+    final Trace trace2 = records.get(2).value;
     System.out.println(trace2);
     assertEquals(start3, trace2.getStartTime());
     assertEquals(end3, trace2.getEndTime());
@@ -251,29 +251,29 @@ class SpanToTraceReconstructorStreamTest {
   void testTraceReduction() {
     final String operationName = "OpName";
 
-    long start1 = 10L;
-    long end1 = 20L;
+    final long start1 = 10L;
+    final long end1 = 20L;
 
-    long start2 = 40L;
-    long end2 = 80L;
-
-
-    EVSpan evSpan1 = new EVSpan("1", "trace1", start1, end1, end1 - start1, operationName, 1,
-            "samplehost", "sampleapp");
-    EVSpan evSpan2 = new EVSpan("2", "trace2", start2, end2, end2 - start2, operationName, 265,
-            "samplehost", "sampleapp");
+    final long start2 = 40L;
+    final long end2 = 80L;
 
 
-    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
-    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+    final EVSpan evSpan1 = new EVSpan("1", "trace1", start1, end1, end1 - start1, operationName, 1,
+        "samplehost", "sampleapp");
+    final EVSpan evSpan2 = new EVSpan("2", "trace2", start2, end2, end2 - start2, operationName,
+        265, "samplehost", "sampleapp");
 
 
-    List<KeyValue<String, Trace>> records = outputTopic.readKeyValuesToList();
+    this.inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
+    this.inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+
+
+    final List<KeyValue<String, Trace>> records = this.outputTopic.readKeyValuesToList();
 
     assertEquals(2, records.size());
 
     // Trace is "completed" after two updates, thus take the second record
-    Trace trace = records.get(1).value;
+    final Trace trace = records.get(1).value;
 
     assertEquals(start1, trace.getStartTime());
     assertEquals(end2, trace.getEndTime());
