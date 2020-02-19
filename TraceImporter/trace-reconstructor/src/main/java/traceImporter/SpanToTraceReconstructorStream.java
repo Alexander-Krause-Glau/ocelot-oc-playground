@@ -3,12 +3,10 @@ package traceImporter;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
+
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
+
 import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
@@ -33,7 +31,6 @@ import org.apache.kafka.streams.kstream.Windowed;
 public class SpanToTraceReconstructorStream {
 
 
-
   private final Properties streamsConfig = new Properties();
 
   private final Topology topology;
@@ -45,7 +42,7 @@ public class SpanToTraceReconstructorStream {
     streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaConfig.BROKER);
     streamsConfig.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, KafkaConfig.COMMIT_INTERVAL_MS);
     streamsConfig.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG,
-        KafkaConfig.TIMESTAMP_EXTRACTOR);
+            KafkaConfig.TIMESTAMP_EXTRACTOR);
     streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, KafkaConfig.APP_ID);
 
     this.registryClient = schemaRegistryClient;
@@ -59,92 +56,62 @@ public class SpanToTraceReconstructorStream {
   }
 
 
-
   private Topology buildTopology() {
     StreamsBuilder builder = new StreamsBuilder();
 
     KStream<String, EVSpan> explSpanStream =
-        builder.stream(KafkaConfig.IN_TOPIC, Consumed.with(Serdes.String(), getAvroSerde(false)));
+            builder.stream(KafkaConfig.IN_TOPIC, Consumed.with(Serdes.String(), getAvroSerde(false)));
 
+
+    // Aggregate Spans to traces and deduplicate similar spans of a trace
     KTable<String, Trace> traceTable =
-        explSpanStream.groupByKey().aggregate(Trace::new, (traceId, evSpan, trace) -> {
+            explSpanStream.groupByKey().aggregate(Trace::new, (traceId, evSpan, trace) -> {
 
-          long evSpanStartTime = evSpan.getStartTime();
-          long evSpanEndTime = evSpan.getEndTime();
-          if (trace.getSpanList() == null) {
-            trace.setSpanList(new ArrayList<>());
-            trace.getSpanList().add(evSpan);
-
-            trace.setStartTime(evSpanStartTime);
-            trace.setEndTime(evSpanEndTime);
-            trace.setOverallRequestCount(1);
-            trace.setDuration(evSpanEndTime - evSpanStartTime);
-
-            trace.setTraceCount(1);
-
-            // set initial trace id - do not change, since this is the major key for kafka
-            // partitioning
-            trace.setTraceId(evSpan.getTraceId());
-          } else {
-
-            // TODO
-            // Implement
-            // - traceDuration
-            // - Tracesteps with caller callee each = EVSpan
-
-
-            // Find duplicates in Trace (via fqn), aggregate based on request count
-            // Furthermore, potentially update trace values
-
-            for (int i = 0; i < trace.getSpanList().size(); i++) {
-              EVSpan includedSpan = trace.getSpanList().get(i);
-
-              if (includedSpan.getOperationName().equals(evSpan.getOperationName())) {
-                includedSpan.setRequestCount(includedSpan.getRequestCount() + 1);
-
-                // Take min startTime of similar spans for the span representative
-                if (includedSpan.getStartTime() > evSpanStartTime) {
-                  // System.out.println(
-                  // "Updated from start " + trace.getStartTime() + " to " + evSpanStartTime);
-                  includedSpan.setStartTime(evSpanStartTime);
-
-                }
-
-                // Take max endTime of similar spans for the span representative
-                if (includedSpan.getEndTime() < evSpanEndTime) {
-                  // System.out
-                  // .println("Updated from end " + trace.getEndTime() + " to " + evSpanEndTime);
-                  includedSpan.setEndTime(evSpanEndTime);
-                }
-
-                break;
-              } else if (i + 1 == trace.getSpanList().size()) {
-                // currently comparing to last entry, which is not equal, therefore
-                // add the span to the list
+              // Initialize Span according to first span of the trace
+              long evSpanStartTime = evSpan.getStartTime();
+              long evSpanEndTime = evSpan.getEndTime();
+              if (trace.getSpanList() == null) {
+                trace.setSpanList(new ArrayList<>());
                 trace.getSpanList().add(evSpan);
-              }
 
-              // update trace values
-              if (trace.getStartTime() > evSpanStartTime) {
-                // System.out.println(
-                // "Updated from start " + trace.getStartTime() + " to " + evSpanStartTime);
                 trace.setStartTime(evSpanStartTime);
-
-              }
-
-              if (trace.getEndTime() < evSpanEndTime) {
-                // System.out
-                // .println("Updated from end " + trace.getEndTime() + " to " + evSpanEndTime);
                 trace.setEndTime(evSpanEndTime);
+                trace.setOverallRequestCount(1);
+                trace.setDuration(evSpanEndTime - evSpanStartTime);
+
+                trace.setTraceCount(1);
+
+                // set initial trace id - do not change, since this is the major key for kafka
+                // partitioning
+                trace.setTraceId(evSpan.getTraceId());
+              } else {
+
+                // TODO
+                // Implement
+                // - traceDuration
+                // - Tracesteps with caller callee each = EVSpan
+
+
+                // Find duplicates in Trace (via fqn), aggregate based on request count
+                // Furthermore, potentially update trace values
+                trace.getSpanList()
+                        .stream()
+                        .filter(s -> s.getOperationName().contentEquals(evSpan.getOperationName()))
+                        .findAny()
+                        .ifPresentOrElse(s -> {
+                                  s.setRequestCount(s.getRequestCount() + 1);
+                                  s.setStartTime(Math.min(s.getStartTime(), evSpan.getStartTime()));
+                                  s.setEndTime(Math.max(s.getEndTime(), evSpan.getEndTime()));
+                                },
+                                () -> trace.getSpanList().add(evSpan));
+                trace.getSpanList().stream().mapToLong(EVSpan::getStartTime).min().ifPresent(trace::setStartTime);
+                trace.getSpanList().stream().mapToLong(EVSpan::getEndTime).max().ifPresent(trace::setEndTime);
+                trace.setDuration(trace.getEndTime() - trace.getStartTime());
+
+
               }
-
-              trace.setOverallRequestCount(trace.getOverallRequestCount() + 1);
-
-              trace.setDuration(trace.getEndTime() - trace.getStartTime());
-            }
-          }
-          return trace;
-        }, Materialized.with(Serdes.String(), getAvroSerde(false)));
+              return trace;
+            }, Materialized.with(Serdes.String(), getAvroSerde(false)));
 
     KStream<String, Trace> traceStream = traceTable.toStream();
 
