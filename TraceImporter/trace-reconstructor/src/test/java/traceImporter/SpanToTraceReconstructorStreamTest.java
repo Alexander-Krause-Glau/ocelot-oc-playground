@@ -194,14 +194,14 @@ class SpanToTraceReconstructorStreamTest {
   void testWindowing() {
     final String traceId = "testtraceid";
 
-    final long start1 = System.currentTimeMillis();
-    final long end1 = System.currentTimeMillis();
+    final long start1 = 1582266180000L;
+    final long end1 = 1582266181000L;
 
-    final long start2 = end1 + 100L;
-    final long end2 = start2 + 100L;
+    final long start2 = 1582266182000L;
+    final long end2 = 1582266183000L;
 
-    final long start3 = start1 + Duration.ofSeconds(50).toMillis();
-    final long end3 = start3 + 5000L;
+    final long start3 = 1582266187000L;
+    final long end3 = 1582266188000L;
 
 
 
@@ -210,19 +210,29 @@ class SpanToTraceReconstructorStreamTest {
     final EVSpan evSpan2 =
         new EVSpan("2", traceId, start2, end2, end2 - start2, "OpB", 1, "samplehost", "sampleapp");
 
-    // This Span's timestamp is 7 seconds later than the first thus closing the window containing
+    // This Span's timestamp is after closing the window containing
     // the first two spans
-    final EVSpan evSpan3 = new EVSpan("212", traceId, start3, end3, end3 - start3, "OpC", 1,
-        "samplehost", "sampleapp");
+    final EVSpan evSpan3 =
+        new EVSpan("3", traceId, start3, end3, end3 - start3, "OpC", 1, "samplehost", "sampleapp");
 
 
-    this.inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1, start1);
-    this.inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2, start2);
-    this.inputTopic.pipeInput(evSpan3.getTraceId(), evSpan3, start3);
+    this.inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
+    this.inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+    this.inputTopic.pipeInput(evSpan3.getTraceId(), evSpan3);
 
 
     // First two Spans should be in a window. However, a record should be created for each update.
+    // Therefore, the first completed Trace is at position 1 -> records.get(1)
     assertEquals(3, this.outputTopic.getQueueSize());
+
+    // final List<TestRecord<String, Trace>> records = this.outputTopic.readRecordsToList();
+    //
+    // records.get(0);
+    // System.out.println(records.get(0).timestamp());
+    // records.get(1);
+    // System.out.println(records.get(1).timestamp());
+    // records.get(2);
+    // System.out.println(records.get(2).timestamp());
 
     final List<KeyValue<String, Trace>> records = this.outputTopic.readKeyValuesToList();
 
@@ -233,7 +243,7 @@ class SpanToTraceReconstructorStreamTest {
     assertEquals(1, trace.getTraceCount());
     assertEquals(2, trace.getSpanList().size());
 
-    // Second trace should only include the last span
+    // Second trace should only include the last span and its values
     final Trace trace2 = records.get(2).value;
     System.out.println(trace2);
     assertEquals(start3, trace2.getStartTime());

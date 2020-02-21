@@ -58,17 +58,19 @@ public class SpanToTraceReconstructorStream {
     return this.topology;
   }
 
-
   private Topology buildTopology() {
     final StreamsBuilder builder = new StreamsBuilder();
 
     final KStream<String, EVSpan> explSpanStream = builder.stream(KafkaConfig.IN_TOPIC,
         Consumed.with(Serdes.String(), this.getAvroSerde(false)));
 
+    // Window spans in 4s intervals with 2s grace period
+    final TimeWindowedKStream<String, EVSpan> windowedEvStream = explSpanStream.groupByKey()
+        .windowedBy(TimeWindows.of(Duration.ofSeconds(4)).grace(Duration.ofSeconds(2)));
 
     // Aggregate Spans to traces and deduplicate similar spans of a trace
-    final KTable<String, Trace> traceTable =
-        explSpanStream.groupByKey().aggregate(Trace::new, (traceId, evSpan, trace) -> {
+    final KTable<Windowed<String>, Trace> traceTable =
+        windowedEvStream.aggregate(Trace::new, (traceId, evSpan, trace) -> {
 
           // Initialize Span according to first span of the trace
           final long evSpanStartTime = evSpan.getStartTime();
@@ -115,7 +117,7 @@ public class SpanToTraceReconstructorStream {
           return trace;
         }, Materialized.with(Serdes.String(), this.getAvroSerde(false)));
 
-    final KStream<String, Trace> traceStream = traceTable.toStream();
+    final KStream<Windowed<String>, Trace> traceStream = traceTable.toStream();
 
     // Map traces to a new key that resembles all included spans
     final KStream<EVSpanKey, Trace> traceIdSpanStream = traceStream.flatMap((key, trace) -> {
@@ -136,13 +138,9 @@ public class SpanToTraceReconstructorStream {
     });
 
 
-    // Aggregate traces in 4s intervals
-    final TimeWindowedKStream<EVSpanKey, Trace> windowedStream = traceIdSpanStream
+    final KTable<EVSpanKey, Trace> reducedTraceTable = traceIdSpanStream
         .groupByKey(Grouped.with(this.getAvroSerde(true), this.getAvroSerde(false)))
-        .windowedBy(TimeWindows.of(Duration.ofSeconds(4)).grace(Duration.ofSeconds(2)));
-
-    final KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
-        windowedStream.aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
+        .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
           if (reducedTrace.getTraceId() == null) {
             reducedTrace = trace;
           } else {
@@ -161,7 +159,7 @@ public class SpanToTraceReconstructorStream {
         }, Materialized.with(this.getAvroSerde(true), this.getAvroSerde(false)));
     // .suppress(Suppressed.untilWindowCloses(Suppressed.BufferConfig.unbounded()));
 
-    final KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
+    final KStream<EVSpanKey, Trace> reducedTraceStream = reducedTraceTable.toStream();
 
     final KStream<String, Trace> reducedIdTraceStream = reducedTraceStream.flatMap((key, value) -> {
 
