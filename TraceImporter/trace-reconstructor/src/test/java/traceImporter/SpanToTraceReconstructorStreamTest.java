@@ -220,19 +220,7 @@ class SpanToTraceReconstructorStreamTest {
     this.inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
     this.inputTopic.pipeInput(evSpan3.getTraceId(), evSpan3);
 
-
-    // First two Spans should be in a window. However, a record should be created for each update.
-    // Therefore, the first completed Trace is at position 1 -> records.get(1)
     assertEquals(3, this.outputTopic.getQueueSize());
-
-    // final List<TestRecord<String, Trace>> records = this.outputTopic.readRecordsToList();
-    //
-    // records.get(0);
-    // System.out.println(records.get(0).timestamp());
-    // records.get(1);
-    // System.out.println(records.get(1).timestamp());
-    // records.get(2);
-    // System.out.println(records.get(2).timestamp());
 
     final List<KeyValue<String, Trace>> records = this.outputTopic.readKeyValuesToList();
 
@@ -245,7 +233,6 @@ class SpanToTraceReconstructorStreamTest {
 
     // Second trace should only include the last span and its values
     final Trace trace2 = records.get(2).value;
-    System.out.println(trace2);
     assertEquals(start3, trace2.getStartTime());
     assertEquals(end3, trace2.getEndTime());
     assertEquals(1, trace2.getTraceCount());
