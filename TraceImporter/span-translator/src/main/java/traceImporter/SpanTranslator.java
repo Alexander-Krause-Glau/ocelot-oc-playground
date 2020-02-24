@@ -78,10 +78,13 @@ public class SpanTranslator {
           long startTime = Duration
               .ofSeconds(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toNanos();
 
-
+          startTime = s.getStartTime().getSeconds();
 
           long endTime =
               Duration.ofSeconds(s.getEndTime().getSeconds(), s.getEndTime().getNanos()).toNanos();
+
+          endTime = s.getEndTime().getSeconds();
+
           long duration = endTime - startTime;
 
 

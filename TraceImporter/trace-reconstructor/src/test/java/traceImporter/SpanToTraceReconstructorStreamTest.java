@@ -8,7 +8,6 @@ import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientExcept
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import java.io.IOException;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -137,18 +136,9 @@ class SpanToTraceReconstructorStreamTest {
     final EVSpan evSpan2 =
         new EVSpan("2", traceId, 5L, 10L, 5L, "OpA", 1, "samplehost", "sampleapp");
 
-    // This Span's timestamp is 7 seconds later than the first thus closing the window containing
-    // the first two spans
-    final EVSpan windowTerminationSpan = new EVSpan("212", "sometrace",
-        Duration.ofSeconds(7).toNanos(), 1L, 2L, "SomeOperation", 1, "samplehost", "sampleapp");
-
-
     this.inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
     this.inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
-    this.inputTopic.pipeInput(windowTerminationSpan.getTraceId(), windowTerminationSpan);
 
-
-    assertEquals(3, this.outputTopic.getQueueSize());
     final Trace trace = this.outputTopic.readKeyValuesToList().get(1).value;
 
     // Trace must contain both spans
@@ -254,16 +244,16 @@ class SpanToTraceReconstructorStreamTest {
     final long start2 = 40L;
     final long end2 = 80L;
 
+    final String firstTraceId = "trace1";
 
-    final EVSpan evSpan1 = new EVSpan("1", "trace1", start1, end1, end1 - start1, operationName, 1,
-        "samplehost", "sampleapp");
+    final EVSpan evSpan1 = new EVSpan("1", firstTraceId, start1, end1, end1 - start1, operationName,
+        1, "samplehost", "sampleapp");
     final EVSpan evSpan2 = new EVSpan("2", "trace2", start2, end2, end2 - start2, operationName,
         265, "samplehost", "sampleapp");
 
 
     this.inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
     this.inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
-
 
     final List<KeyValue<String, Trace>> records = this.outputTopic.readKeyValuesToList();
 
@@ -281,6 +271,9 @@ class SpanToTraceReconstructorStreamTest {
     // Only the span list of the latest trace in the reduction should be used
     assertEquals(1, trace.getSpanList().size());
     assertEquals(265, trace.getSpanList().get(0).getRequestCount());
+
+    // Trace id of the reduced trace should be equal to the trace id of the first trace
+    assertEquals(firstTraceId, trace.getTraceId());
 
   }
 

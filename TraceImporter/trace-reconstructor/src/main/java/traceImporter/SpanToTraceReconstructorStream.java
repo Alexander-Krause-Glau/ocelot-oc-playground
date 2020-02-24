@@ -122,6 +122,8 @@ public class SpanToTraceReconstructorStream {
     // Map traces to a new key that resembles all included spans
     final KStream<EVSpanKey, Trace> traceIdSpanStream = traceStream.flatMap((key, trace) -> {
 
+      System.out.println("key: " + key.window().startTime());
+
       final List<KeyValue<EVSpanKey, Trace>> result = new LinkedList<>();
 
       final List<EVSpanData> spanDataList = new ArrayList<>();
@@ -137,7 +139,9 @@ public class SpanToTraceReconstructorStream {
       return result;
     });
 
-
+    // BUG !!! State Store with all previous traces is used due to using EVSpanKey above,
+    // therefore loosing time information
+    // Reduce similar Traces of one window to a single Trace
     final KTable<EVSpanKey, Trace> reducedTraceTable = traceIdSpanStream
         .groupByKey(Grouped.with(this.getAvroSerde(true), this.getAvroSerde(false)))
         .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
@@ -187,7 +191,8 @@ public class SpanToTraceReconstructorStream {
 
     // TODO implement count attribute in Trace -> number of similar traces
     // TODO Reduce traceIdAndAllTracesStream to similiar traces stream (map and reduce)
-    // use hash for trace https://docs.confluent.io/current/streams/quickstart.html#purpose
+    // use something like hash for trace
+    // https://docs.confluent.io/current/streams/quickstart.html#purpose
 
     reducedIdTraceStream.to(KafkaConfig.OUT_TOPIC,
         Produced.with(Serdes.String(), this.getAvroSerde(false)));
