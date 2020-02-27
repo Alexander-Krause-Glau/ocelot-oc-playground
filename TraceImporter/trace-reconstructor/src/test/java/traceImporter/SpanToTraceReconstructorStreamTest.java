@@ -306,6 +306,8 @@ class SpanToTraceReconstructorStreamTest {
 
     List<Trace> traces = outputTopic.readValuesToList();
 
+    traces.forEach(System.out::println);
+
     assertEquals(traceId1, traces.get(0).getTraceId());
     assertEquals(traceId2, traces.get(1).getTraceId());
 

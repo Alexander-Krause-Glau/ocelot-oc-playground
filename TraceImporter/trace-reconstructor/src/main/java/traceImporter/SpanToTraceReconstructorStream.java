@@ -3,29 +3,14 @@ package traceImporter;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
 import org.apache.avro.specific.SpecificRecord;
+import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.streams.KafkaStreams;
-import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.StreamsConfig;
-import org.apache.kafka.streams.Topology;
-import org.apache.kafka.streams.kstream.Consumed;
-import org.apache.kafka.streams.kstream.Grouped;
-import org.apache.kafka.streams.kstream.KStream;
-import org.apache.kafka.streams.kstream.KTable;
-import org.apache.kafka.streams.kstream.Materialized;
-import org.apache.kafka.streams.kstream.Produced;
-import org.apache.kafka.streams.kstream.TimeWindowedKStream;
-import org.apache.kafka.streams.kstream.TimeWindows;
-import org.apache.kafka.streams.kstream.Windowed;
+import org.apache.kafka.streams.*;
+import org.apache.kafka.streams.kstream.*;
+
+import java.time.Duration;
+import java.util.*;
 
 /**
  * Collects spans for 10 seconds, grouped by the trace id, and forwards the resulting batch to the
@@ -120,11 +105,12 @@ public class SpanToTraceReconstructorStream {
     final KStream<Windowed<String>, Trace> traceStream = traceTable.toStream();
 
     // Map traces to a new key that resembles all included spans
-    final KStream<EVSpanKey, Trace> traceIdSpanStream = traceStream.flatMap((key, trace) -> {
+
+    final KStream<Windowed<EVSpanKey>, Trace> traceIdSpanStream = traceStream.flatMap((key, trace) -> {
 
       System.out.println("key: " + key.window().startTime());
 
-      final List<KeyValue<EVSpanKey, Trace>> result = new LinkedList<>();
+      final List<KeyValue<Windowed<EVSpanKey>, Trace>> result = new LinkedList<>();
 
       final List<EVSpanData> spanDataList = new ArrayList<>();
 
@@ -135,16 +121,19 @@ public class SpanToTraceReconstructorStream {
 
       final EVSpanKey newKey = new EVSpanKey(spanDataList);
 
-      result.add(KeyValue.pair(newKey, trace));
+      final Windowed<EVSpanKey> newWindowedKey = new Windowed<>(newKey, key.window());
+
+      result.add(KeyValue.pair(newWindowedKey, trace));
       return result;
     });
 
-    // BUG !!! State Store with all previous traces is used due to using EVSpanKey above,
-    // therefore loosing time information
+
     // Reduce similar Traces of one window to a single Trace
-    final KTable<EVSpanKey, Trace> reducedTraceTable = traceIdSpanStream
-        .groupByKey(Grouped.with(this.getAvroSerde(true), this.getAvroSerde(false)))
+    final KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable = traceIdSpanStream
+        .groupByKey(Grouped.with(getWindowedAvroSerde(), getAvroSerde(false)))
         .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
+
+
           if (reducedTrace.getTraceId() == null) {
             reducedTrace = trace;
           } else {
@@ -160,10 +149,10 @@ public class SpanToTraceReconstructorStream {
           }
 
           return reducedTrace;
-        }, Materialized.with(this.getAvroSerde(true), this.getAvroSerde(false)));
+        }, Materialized.with(this.getWindowedAvroSerde(), this.getAvroSerde(false)));
     // .suppress(Suppressed.untilWindowCloses(Suppressed.BufferConfig.unbounded()));
 
-    final KStream<EVSpanKey, Trace> reducedTraceStream = reducedTraceTable.toStream();
+    final KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
 
     final KStream<String, Trace> reducedIdTraceStream = reducedTraceStream.flatMap((key, value) -> {
 
@@ -208,13 +197,33 @@ public class SpanToTraceReconstructorStream {
     Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
   }
 
+  /**
+   * Creates a {@link Serde} for specific avro records using the {@link SpecificAvroSerde}
+   * @param forKey {@code true} if the Serde is for keys, {@code false} otherwise
+   * @param <T> type of the avro record
+   * @return a Serde
+   */
   private <T extends SpecificRecord> SpecificAvroSerde<T> getAvroSerde(final boolean forKey) {
     final SpecificAvroSerde<T> valueSerde = new SpecificAvroSerde<>(this.registryClient);
     valueSerde.configure(
-        Map.of(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, "http://localhost:8081"),
+        Map.of(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, KafkaConfig.REGISTRY_URL),
         forKey);
+
     return valueSerde;
   }
+
+  /**
+   * Creates a new Serde for windowed keys of specific avro records
+   * @param <T> avro record data type
+   * @return a {@link Serde} for specific avro records wrapped in a time window
+   */
+  private <T extends SpecificRecord> Serde<Windowed<T>> getWindowedAvroSerde() {
+    Serde<T> valueSerde = getAvroSerde(true);
+    TimeWindowedSerializer<T> ser = new TimeWindowedSerializer<T>(valueSerde.serializer());
+    TimeWindowedDeserializer<T> de = new TimeWindowedDeserializer<T>(valueSerde.deserializer());
+    return Serdes.serdeFrom(ser, de);
+  }
+
 
 }
 
