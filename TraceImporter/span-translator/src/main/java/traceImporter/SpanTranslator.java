@@ -75,15 +75,13 @@ public class SpanTranslator {
           String spanId =
               BaseEncoding.base16().lowerCase().encode(s.getSpanId().toByteArray(), 0, 8);
 
-          long startTime = Duration
-              .ofSeconds(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toNanos();
 
-          startTime = s.getStartTime().getSeconds();
+          long startTime =
+              Instant.ofEpochSecond(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toEpochMilli();
 
           long endTime =
-              Duration.ofSeconds(s.getEndTime().getSeconds(), s.getEndTime().getNanos()).toNanos();
+              Instant.ofEpochSecond(s.getEndTime().getSeconds(), s.getEndTime().getNanos()).toEpochMilli();
 
-          endTime = s.getEndTime().getSeconds();
 
           long duration = endTime - startTime;
 

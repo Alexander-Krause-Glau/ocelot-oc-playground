@@ -104,8 +104,8 @@ public class SpanToTraceReconstructorStream {
 
     final KStream<Windowed<String>, Trace> traceStream = traceTable.toStream();
 
-    // Map traces to a new key that resembles all included spans
 
+    // Map traces to a new key that resembles all included spans
     final KStream<Windowed<EVSpanKey>, Trace> traceIdSpanStream = traceStream.flatMap((key, trace) -> {
 
       System.out.println("key: " + key.window().startTime());
