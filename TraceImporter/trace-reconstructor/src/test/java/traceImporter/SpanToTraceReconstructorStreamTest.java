@@ -8,6 +8,7 @@ import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientExcept
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -214,7 +215,7 @@ class SpanToTraceReconstructorStreamTest {
 
     final List<KeyValue<String, Trace>> records = this.outputTopic.readKeyValuesToList();
 
-    // First Trace should encompass first two spans
+    // First 'complete' Trace should encompass first two spans
     final Trace trace = records.get(1).value;
     assertEquals(start1, trace.getStartTime());
     assertEquals(end2, trace.getEndTime());
@@ -274,6 +275,39 @@ class SpanToTraceReconstructorStreamTest {
 
     // Trace id of the reduced trace should be equal to the trace id of the first trace
     assertEquals(firstTraceId, trace.getTraceId());
+
+  }
+
+  /**
+   * Traces that were created within different windows should not be reduced to one another
+   */
+  @Test
+  void testTraceReductionWindowing() {
+
+    final String traceId1 = "trace1";
+    final String traceId2 = "trace2";
+    final String operationName = "OpName";
+
+    final long start1 = 10L;
+    final long end1 = 20L;
+
+
+    final long start2 = start1 + Duration.ofSeconds(7).toMillis();
+    final long end2 = start2 + 100L;
+
+
+    final EVSpan evSpan1 = new EVSpan("1", traceId1, start1, end1, end1 - start1, operationName,
+        1, "samplehost", "sampleapp");
+    final EVSpan evSpan2 = new EVSpan("2", traceId2, start2, end2, end2 - start2, operationName,
+        1, "samplehost", "sampleapp");
+
+    inputTopic.pipeInput(evSpan1.getTraceId(), evSpan1);
+    inputTopic.pipeInput(evSpan2.getTraceId(), evSpan2);
+
+    List<Trace> traces = outputTopic.readValuesToList();
+
+    assertEquals(traceId1, traces.get(0).getTraceId());
+    assertEquals(traceId2, traces.get(1).getTraceId());
 
   }
 
