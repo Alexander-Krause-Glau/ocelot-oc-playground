@@ -106,60 +106,58 @@ public class SpanToTraceReconstructorStream {
 
 
     // Map traces to a new key that resembles all included spans
-    final KStream<Windowed<EVSpanKey>, Trace> traceIdSpanStream = traceStream.flatMap((key, trace) -> {
+    final KStream<Windowed<EVSpanKey>, Trace> traceIdSpanStream =
+        traceStream.flatMap((key, trace) -> {
 
-      System.out.println("key 1: " + key.window().endTime());
+          System.out.println("key 1: " + key.window().endTime());
 
-      final List<KeyValue<Windowed<EVSpanKey>, Trace>> result = new LinkedList<>();
+          final List<KeyValue<Windowed<EVSpanKey>, Trace>> result = new LinkedList<>();
 
-      final List<EVSpanData> spanDataList = new ArrayList<>();
+          final List<EVSpanData> spanDataList = new ArrayList<>();
 
-      for (final EVSpan span : trace.getSpanList()) {
-        spanDataList
-            .add(new EVSpanData(span.getOperationName(), span.getHostname(), span.getAppName()));
-      }
+          for (final EVSpan span : trace.getSpanList()) {
+            spanDataList.add(
+                new EVSpanData(span.getOperationName(), span.getHostname(), span.getAppName()));
+          }
 
-      final EVSpanKey newKey = new EVSpanKey(spanDataList);
+          final EVSpanKey newKey = new EVSpanKey(spanDataList);
 
-      final Windowed<EVSpanKey> newWindowedKey = new Windowed<>(newKey, key.window());
+          final Windowed<EVSpanKey> newWindowedKey = new Windowed<>(newKey, key.window());
 
-      result.add(KeyValue.pair(newWindowedKey, trace));
-      return result;
-    });
+          result.add(KeyValue.pair(newWindowedKey, trace));
+          return result;
+        });
 
 
     // Reduce similar Traces of one window to a single Trace
-    final KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable = traceIdSpanStream
-        .groupByKey(Grouped.with(getWindowedAvroSerde(), getAvroSerde(false)))
-        .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
-          
-          System.out.println("key 2 start time: " + sharedTraceKey.window().startTime());
-          System.out.println("key 2 end time: " + sharedTraceKey.window().endTime());
+    final KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
+        traceIdSpanStream.groupByKey(Grouped.with(getWindowedAvroSerde(), getAvroSerde(false)))
+            .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
 
-          if (reducedTrace.getTraceId() == null) {
-            reducedTrace = trace;
-          } else {
-            reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
-            // Use the Span list of the latest trace in the group
-            // Do so since span list only grow but never loose elements
-            reducedTrace.setSpanList(trace.getSpanList());
+              System.out.println("window 2 " + sharedTraceKey.window());
 
-            // Update start and end time of the trace
+              if (reducedTrace.getTraceId() == null) {
+                reducedTrace = trace;
+              } else {
+                reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
+                // Use the Span list of the latest trace in the group
+                // Do so since span list only grow but never loose elements
+                reducedTrace.setSpanList(trace.getSpanList());
 
-            reducedTrace.setStartTime(Math.min(trace.getStartTime(), reducedTrace.getStartTime()));
-            reducedTrace.setEndTime(Math.max(trace.getEndTime(), reducedTrace.getEndTime()));
-          }
+                // Update start and end time of the trace
 
-          return reducedTrace;
-        }, Materialized.with(this.getWindowedAvroSerde(), this.getAvroSerde(false)));
+                reducedTrace
+                    .setStartTime(Math.min(trace.getStartTime(), reducedTrace.getStartTime()));
+                reducedTrace.setEndTime(Math.max(trace.getEndTime(), reducedTrace.getEndTime()));
+              }
+
+              return reducedTrace;
+            }, Materialized.with(this.getWindowedAvroSerde(), this.getAvroSerde(false)));
     // .suppress(Suppressed.untilWindowCloses(Suppressed.BufferConfig.unbounded()));
 
     final KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
 
     final KStream<String, Trace> reducedIdTraceStream = reducedTraceStream.flatMap((key, value) -> {
-      
-      System.out.println("key 3 start time: " + key.window().startTime());
-      System.out.println("key 3 end time: " + key.window().endTime());
 
       final List<KeyValue<String, Trace>> result = new LinkedList<>();
 
@@ -204,6 +202,7 @@ public class SpanToTraceReconstructorStream {
 
   /**
    * Creates a {@link Serde} for specific avro records using the {@link SpecificAvroSerde}
+   * 
    * @param forKey {@code true} if the Serde is for keys, {@code false} otherwise
    * @param <T> type of the avro record
    * @return a Serde
@@ -219,6 +218,7 @@ public class SpanToTraceReconstructorStream {
 
   /**
    * Creates a new Serde for windowed keys of specific avro records
+   * 
    * @param <T> avro record data type
    * @return a {@link Serde} for specific avro records wrapped in a time window
    */
