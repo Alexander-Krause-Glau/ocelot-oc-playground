@@ -18,12 +18,14 @@ import java.util.*;
  */
 public class SpanToTraceReconstructorStream {
 
+  private static final Duration WINDOW_SIZE = Duration.ofSeconds(4);
+  private static final Duration GRACE_PERIOD = Duration.ofSeconds(2);
 
   private final Properties streamsConfig = new Properties();
 
   private final Topology topology;
 
-  private final SchemaRegistryClient registryClient;
+  private final SchemaRegistryClient registryClient;  
 
   public SpanToTraceReconstructorStream(final SchemaRegistryClient schemaRegistryClient) {
 
@@ -51,7 +53,7 @@ public class SpanToTraceReconstructorStream {
 
     // Window spans in 4s intervals with 2s grace period
     final TimeWindowedKStream<String, EVSpan> windowedEvStream = explSpanStream.groupByKey()
-        .windowedBy(TimeWindows.of(Duration.ofSeconds(4)).grace(Duration.ofSeconds(2)));
+        .windowedBy(TimeWindows.of(WINDOW_SIZE).grace(GRACE_PERIOD));
 
     // Aggregate Spans to traces and deduplicate similar spans of a trace
     final KTable<Windowed<String>, Trace> traceTable =
@@ -109,8 +111,6 @@ public class SpanToTraceReconstructorStream {
     final KStream<Windowed<EVSpanKey>, Trace> traceIdSpanStream =
         traceStream.flatMap((key, trace) -> {
 
-          System.out.println("window 1: " + key.window());
-
           final List<KeyValue<Windowed<EVSpanKey>, Trace>> result = new LinkedList<>();
 
           final List<EVSpanData> spanDataList = new ArrayList<>();
@@ -131,10 +131,8 @@ public class SpanToTraceReconstructorStream {
 
     // Reduce similar Traces of one window to a single Trace
     final KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
-        traceIdSpanStream.groupByKey(Grouped.with(getWindowedAvroSerde(), getAvroSerde(false)))
+        traceIdSpanStream.groupByKey(Grouped.with(getWindowedAvroSerde(WINDOW_SIZE), getAvroSerde(false)))
             .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
-
-              System.out.println("window 2 " + sharedTraceKey.window());
 
               if (reducedTrace.getTraceId() == null) {
                 reducedTrace = trace;
@@ -152,7 +150,7 @@ public class SpanToTraceReconstructorStream {
               }
 
               return reducedTrace;
-            }, Materialized.with(this.getWindowedAvroSerde(), this.getAvroSerde(false)));
+            }, Materialized.with(this.getWindowedAvroSerde(WINDOW_SIZE), this.getAvroSerde(false)));
     // .suppress(Suppressed.untilWindowCloses(Suppressed.BufferConfig.unbounded()));
 
     final KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
@@ -208,12 +206,12 @@ public class SpanToTraceReconstructorStream {
    * @return a Serde
    */
   private <T extends SpecificRecord> SpecificAvroSerde<T> getAvroSerde(final boolean forKey) {
-    final SpecificAvroSerde<T> valueSerde = new SpecificAvroSerde<>(this.registryClient);
-    valueSerde.configure(
+    final SpecificAvroSerde<T> serde = new SpecificAvroSerde<>(this.registryClient);
+    serde.configure(
         Map.of(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, KafkaConfig.REGISTRY_URL),
         forKey);
 
-    return valueSerde;
+    return serde;
   }
 
   /**
@@ -222,11 +220,11 @@ public class SpanToTraceReconstructorStream {
    * @param <T> avro record data type
    * @return a {@link Serde} for specific avro records wrapped in a time window
    */
-  private <T extends SpecificRecord> Serde<Windowed<T>> getWindowedAvroSerde() {
-    Serde<T> valueSerde = getAvroSerde(true);
-    TimeWindowedSerializer<T> ser = new TimeWindowedSerializer<T>(valueSerde.serializer());
-    TimeWindowedDeserializer<T> de = new TimeWindowedDeserializer<T>(valueSerde.deserializer());
-    return Serdes.serdeFrom(ser, de);
+  private <T extends SpecificRecord> Serde<Windowed<T>> getWindowedAvroSerde(Duration windowSizeInMs) {
+
+    Serde<T> keySerde = getAvroSerde(true);
+
+    return new WindowedSerdes.TimeWindowedSerde<>(keySerde, windowSizeInMs.toMillis());
   }
 
 
