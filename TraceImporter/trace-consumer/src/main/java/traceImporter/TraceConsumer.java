@@ -46,8 +46,9 @@ public class TraceConsumer {
       List<EVSpan> list = value.getSpanList();
 
       list.forEach((val) -> {
-        System.out.println(val.getStartTime() + " : " + val.getEndTime() + " für "
-            + val.getOperationName() + " mit Anzahl " + val.getRequestCount());
+        System.out.println(
+            val.getStartTime() + " : " + val.getEndTime() + " für " + val.getOperationName()
+                + " mit Anzahl " + val.getRequestCount() + " und Trace Id " + val.getTraceId());
       });
 
     });

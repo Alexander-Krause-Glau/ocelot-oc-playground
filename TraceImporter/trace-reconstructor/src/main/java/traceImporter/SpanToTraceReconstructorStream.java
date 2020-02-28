@@ -1,27 +1,16 @@
 package traceImporter;
 
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.common.serialization.Serde;
-import org.apache.kafka.common.serialization.Serdes.StringSerde;
-import org.apache.kafka.streams.KafkaStreams;
-import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.StreamsConfig;
-import org.apache.kafka.streams.kstream.Grouped;
-import org.apache.kafka.streams.kstream.KGroupedStream;
-import org.apache.kafka.streams.kstream.KStream;
-import org.apache.kafka.streams.kstream.KTable;
-import org.apache.kafka.streams.kstream.Materialized;
-import org.apache.kafka.streams.kstream.TimeWindowedKStream;
-import org.apache.kafka.streams.kstream.TimeWindows;
-import org.apache.kafka.streams.kstream.Windowed;
+import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.*;
+import org.apache.kafka.streams.kstream.*;
+
+import java.time.Duration;
+import java.util.*;
 
 /**
  * Collects spans for 10 seconds, grouped by the trace id, and forwards the resulting batch to the
@@ -29,40 +18,50 @@ import org.apache.kafka.streams.kstream.Windowed;
  */
 public class SpanToTraceReconstructorStream {
 
-  private static final String OUT_TOPIC = "explorviz-traces";
-  private static final String IN_TOPIC = "explorviz-spans";
+  private static final Duration WINDOW_SIZE = Duration.ofSeconds(4);
+  private static final Duration GRACE_PERIOD = Duration.ofSeconds(2);
 
   private final Properties streamsConfig = new Properties();
 
-  public SpanToTraceReconstructorStream() {
+  private final Topology topology;
 
-    streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9091");
+  private final SchemaRegistryClient registryClient;  
 
-    streamsConfig.put("schema.registry.url", "http://localhost:8081");
+  public SpanToTraceReconstructorStream(final SchemaRegistryClient schemaRegistryClient) {
 
-    streamsConfig.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 2 * 1000);
+    this.streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaConfig.BROKER);
+    this.streamsConfig.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, KafkaConfig.COMMIT_INTERVAL_MS);
+    this.streamsConfig.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG,
+        KafkaConfig.TIMESTAMP_EXTRACTOR);
+    this.streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, KafkaConfig.APP_ID);
 
-    streamsConfig.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, StringSerde.class);
-    streamsConfig.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class);
+    this.registryClient = schemaRegistryClient;
 
-    streamsConfig.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG,
-        EVSpanTimestampKafkaExtractor.class);
-    streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "trace-reconstruction");
+    this.topology = this.buildTopology();
   }
 
 
-  public void run() {
+  public Topology getTopology() {
+    return this.topology;
+  }
 
-    StreamsBuilder builder = new StreamsBuilder();
+  private Topology buildTopology() {
+    final StreamsBuilder builder = new StreamsBuilder();
 
-    KStream<String, EVSpan> explSpanStream = builder.stream(IN_TOPIC);
+    final KStream<String, EVSpan> explSpanStream = builder.stream(KafkaConfig.IN_TOPIC,
+        Consumed.with(Serdes.String(), this.getAvroSerde(false)));
 
-    KTable<String, Trace> traceTable =
-        explSpanStream.groupByKey().aggregate(Trace::new, (traceId, evSpan, trace) -> {
+    // Window spans in 4s intervals with 2s grace period
+    final TimeWindowedKStream<String, EVSpan> windowedEvStream = explSpanStream.groupByKey()
+        .windowedBy(TimeWindows.of(WINDOW_SIZE).grace(GRACE_PERIOD));
 
-          long evSpanStartTime = evSpan.getStartTime();
-          long evSpanEndTime = evSpan.getEndTime();
+    // Aggregate Spans to traces and deduplicate similar spans of a trace
+    final KTable<Windowed<String>, Trace> traceTable =
+        windowedEvStream.aggregate(Trace::new, (traceId, evSpan, trace) -> {
 
+          // Initialize Span according to first span of the trace
+          final long evSpanStartTime = evSpan.getStartTime();
+          final long evSpanEndTime = evSpan.getEndTime();
           if (trace.getSpanList() == null) {
             trace.setSpanList(new ArrayList<>());
             trace.getSpanList().add(evSpan);
@@ -87,138 +86,87 @@ public class SpanToTraceReconstructorStream {
 
             // Find duplicates in Trace (via fqn), aggregate based on request count
             // Furthermore, potentially update trace values
+            trace.getSpanList().stream()
+                .filter(s -> s.getOperationName().contentEquals(evSpan.getOperationName()))
+                .findAny().ifPresentOrElse(s -> {
+                  s.setRequestCount(s.getRequestCount() + 1);
+                  s.setStartTime(Math.min(s.getStartTime(), evSpan.getStartTime()));
+                  s.setEndTime(Math.max(s.getEndTime(), evSpan.getEndTime()));
+                }, () -> trace.getSpanList().add(evSpan));
+            trace.getSpanList().stream().mapToLong(EVSpan::getStartTime).min()
+                .ifPresent(trace::setStartTime);
+            trace.getSpanList().stream().mapToLong(EVSpan::getEndTime).max()
+                .ifPresent(trace::setEndTime);
+            trace.setDuration(trace.getEndTime() - trace.getStartTime());
 
-            long newStartTime = trace.getStartTime();
-            long newEndTime = trace.getEndTime();
 
-            for (int i = 0; i < trace.getSpanList().size(); i++) {
-              EVSpan includedSpan = trace.getSpanList().get(i);
+          }
+          return trace;
+        }, Materialized.with(Serdes.String(), this.getAvroSerde(false)));
 
-              if (includedSpan.getOperationName().equals(evSpan.getOperationName())) {
-                includedSpan.setRequestCount(includedSpan.getRequestCount() + 1);
+    final KStream<Windowed<String>, Trace> traceStream = traceTable.toStream();
 
-                // Take min startTime of similar spans for the span representative
-                if (includedSpan.getStartTime() > evSpanStartTime) {
-                  // System.out.println(
-                  // "Updated from start " + trace.getStartTime() + " to " + evSpanStartTime);
-                  includedSpan.setStartTime(evSpanStartTime);
 
-                }
+    // Map traces to a new key that resembles all included spans
+    final KStream<Windowed<EVSpanKey>, Trace> traceIdSpanStream =
+        traceStream.flatMap((key, trace) -> {
 
-                // Take max endTime of similar spans for the span representative
-                if (includedSpan.getEndTime() < evSpanEndTime) {
-                  // System.out
-                  // .println("Updated from end " + trace.getEndTime() + " to " + evSpanEndTime);
-                  includedSpan.setEndTime(evSpanEndTime);
-                }
+          final List<KeyValue<Windowed<EVSpanKey>, Trace>> result = new LinkedList<>();
 
-                break;
-              } else if (i + 1 == trace.getSpanList().size()) {
-                // currently comparing to last entry, which is not equal, therefore
-                // add the span to the list
-                trace.getSpanList().add(evSpan);
-              }
+          final List<EVSpanData> spanDataList = new ArrayList<>();
 
-              // update trace values
-              if (trace.getStartTime() > evSpanStartTime) {
-                // System.out.println(
-                // "Updated from start " + trace.getStartTime() + " to " + evSpanStartTime);
-                trace.setStartTime(evSpanStartTime);
-
-              }
-
-              if (trace.getEndTime() < evSpanEndTime) {
-                // System.out
-                // .println("Updated from end " + trace.getEndTime() + " to " + evSpanEndTime);
-                trace.setEndTime(evSpanEndTime);
-              }
-
-              trace.setOverallRequestCount(trace.getOverallRequestCount() + 1);
-
-              trace.setDuration(trace.getEndTime() - trace.getStartTime());
-            }
+          for (final EVSpan span : trace.getSpanList()) {
+            spanDataList.add(
+                new EVSpanData(span.getOperationName(), span.getHostname(), span.getAppName()));
           }
 
-          return trace;
+          final EVSpanKey newKey = new EVSpanKey(spanDataList);
+
+          final Windowed<EVSpanKey> newWindowedKey = new Windowed<>(newKey, key.window());
+
+          result.add(KeyValue.pair(newWindowedKey, trace));
+          return result;
         });
 
-    KStream<String, Trace> traceStream = traceTable.toStream();
 
-    // TODO A serializer (key: org.apache.kafka.common.serialization.StringSerializer / value:
-    // io.confluent.kafka.streams.serdes.avro.SpecificAvroSerializer) is not compatible to the
-    // actual key or value type (key type:
-    // traceImporter.SpanToTraceReconstructorStream$SharedTraceData / value type:
-    // traceImporter.Trace). Change the default Serdes in StreamConfig or provide correct Serdes via
-    // method parameters.
+    // Reduce similar Traces of one window to a single Trace
+    final KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
+        traceIdSpanStream.groupByKey(Grouped.with(getWindowedAvroSerde(WINDOW_SIZE), getAvroSerde(false)))
+            .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
 
-    KStream<EVSpanKey, Trace> traceIdSpanStream = traceStream.flatMap((key, value) -> {
+              if (reducedTrace.getTraceId() == null) {
+                reducedTrace = trace;
+              } else {
+                reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
+                // Use the Span list of the latest trace in the group
+                // Do so since span list only grow but never loose elements
+                reducedTrace.setSpanList(trace.getSpanList());
 
-      List<KeyValue<EVSpanKey, Trace>> result = new LinkedList<>();
+                // Update start and end time of the trace
 
-      List<EVSpanData> spanDataList = new ArrayList<>();
+                reducedTrace
+                    .setStartTime(Math.min(trace.getStartTime(), reducedTrace.getStartTime()));
+                reducedTrace.setEndTime(Math.max(trace.getEndTime(), reducedTrace.getEndTime()));
+              }
 
-      for (EVSpan span : value.getSpanList()) {
-        spanDataList
-            .add(new EVSpanData(span.getOperationName(), span.getHostname(), span.getAppName()));
-      }
+              return reducedTrace;
+            }, Materialized.with(this.getWindowedAvroSerde(WINDOW_SIZE), this.getAvroSerde(false)));
+    // .suppress(Suppressed.untilWindowCloses(Suppressed.BufferConfig.unbounded()));
 
-      EVSpanKey newKey = new EVSpanKey(spanDataList);
+    final KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
 
-      result.add(KeyValue.pair(newKey, value));
-      return result;
-    });
+    final KStream<String, Trace> reducedIdTraceStream = reducedTraceStream.flatMap((key, value) -> {
 
-    // traceIdSpanStream.foreach((key, value) -> {
-    // System.out.printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(),
-    // key.getSpanList().get(0).getOperationName());
-    // });
-
-    final Map<String, String> serdeConfig =
-        Collections.singletonMap("schema.registry.url", "http://localhost:8081");
-    // `Foo` and `Bar` are Java classes generated from Avro schemas
-    final Serde<EVSpanKey> keySpecificAvroSerde = new SpecificAvroSerde<>();
-    keySpecificAvroSerde.configure(serdeConfig, true); // `true` for record keys
-    final Serde<Trace> valueSpecificAvroSerde = new SpecificAvroSerde<>();
-    valueSpecificAvroSerde.configure(serdeConfig, false); // `false` for record values
-
-    TimeWindowedKStream<EVSpanKey, Trace> windowedStream =
-        traceIdSpanStream.groupByKey(Grouped.with(keySpecificAvroSerde, valueSpecificAvroSerde))
-            .windowedBy(TimeWindows.of(Duration.ofSeconds(4)).grace(Duration.ofSeconds(2)));
-
-    KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
-        windowedStream.aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
-
-          // TODO build reduced trace here
-
-          if (reducedTrace.getTraceId() == null) {
-            reducedTrace.setTraceId(trace.getTraceId());
-          }
-          reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
-
-          if (reducedTrace.getSpanList() == null) {
-            reducedTrace.setSpanList(trace.getSpanList());
-          }
-
-          return reducedTrace;
-        }, Materialized.with(keySpecificAvroSerde, valueSpecificAvroSerde));
-
-    KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
-
-    KStream<String, Trace> reducedIdTraceStream = reducedTraceStream.flatMap((key, value) -> {
-
-      List<KeyValue<String, Trace>> result = new LinkedList<>();
+      final List<KeyValue<String, Trace>> result = new LinkedList<>();
 
       result.add(KeyValue.pair(value.getTraceId(), value));
       return result;
     });
 
-    reducedIdTraceStream.foreach((key, value) -> {
+    reducedIdTraceStream.foreach((key, trace) -> {
 
-      System.out.printf("New trace with %d spans (id: %s, traceCount: %d)\n",
-          value.getSpanList().size(), key, value.getTraceCount());
-
-      List<EVSpan> list = value.getSpanList();
-
+      final List<EVSpan> list = trace.getSpanList();
+      System.out.println("Trace with id " + trace.getTraceId());
       list.forEach((val) -> {
         System.out.println(val.getStartTime() + " : " + val.getEndTime() + " für "
             + val.getOperationName() + " mit Anzahl " + val.getRequestCount());
@@ -226,40 +174,59 @@ public class SpanToTraceReconstructorStream {
 
     });
 
-    // spansWindowedStream.foreach((key, value) -> System.out
-    // .printf("New trace with %d spans (id: %s)\n", value.getSpanList().size(), key));
 
-    // KStream<String, Trace> traceIdAndReducedTracesStream = reducedTraceStream
-    // .map((KeyValueMapper<Windowed<EVSpanKey>, Trace, KeyValue<String, Trace>>) (key,
-    // value) -> new KeyValue<>(value.getTraceId(), value));
+    // Sort spans in each trace based of start time
+    reducedIdTraceStream.peek(
+        (key, trace) -> trace.getSpanList().sort(Comparator.comparingLong(EVSpan::getStartTime)));
 
-
-    // TODO Ordering in Trace
     // TODO implement count attribute in Trace -> number of similar traces
     // TODO Reduce traceIdAndAllTracesStream to similiar traces stream (map and reduce)
-    // use hash for trace https://docs.confluent.io/current/streams/quickstart.html#purpose
+    // use something like hash for trace
+    // https://docs.confluent.io/current/streams/quickstart.html#purpose
 
-    reducedIdTraceStream.to(OUT_TOPIC);
-    // traceStream.to(OUT_TOPIC);
+    reducedIdTraceStream.to(KafkaConfig.OUT_TOPIC,
+        Produced.with(Serdes.String(), this.getAvroSerde(false)));
+    return builder.build();
+  }
 
+  public void run() {
 
-    final KafkaStreams streams = new KafkaStreams(builder.build(), streamsConfig);
+    final KafkaStreams streams = new KafkaStreams(this.topology, this.streamsConfig);
     streams.cleanUp();
     streams.start();
 
     Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
   }
 
-  public EVSpanKey createEVSpanKeyForTrace(Trace t) {
-    List<EVSpanData> spanDataList = new ArrayList<>();
+  /**
+   * Creates a {@link Serde} for specific avro records using the {@link SpecificAvroSerde}
+   * 
+   * @param forKey {@code true} if the Serde is for keys, {@code false} otherwise
+   * @param <T> type of the avro record
+   * @return a Serde
+   */
+  private <T extends SpecificRecord> SpecificAvroSerde<T> getAvroSerde(final boolean forKey) {
+    final SpecificAvroSerde<T> serde = new SpecificAvroSerde<>(this.registryClient);
+    serde.configure(
+        Map.of(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, KafkaConfig.REGISTRY_URL),
+        forKey);
 
-    for (EVSpan span : t.getSpanList()) {
-      spanDataList
-          .add(new EVSpanData(span.getOperationName(), span.getHostname(), span.getAppName()));
-    }
-
-    return new EVSpanKey(spanDataList);
+    return serde;
   }
+
+  /**
+   * Creates a new Serde for windowed keys of specific avro records
+   * 
+   * @param <T> avro record data type
+   * @return a {@link Serde} for specific avro records wrapped in a time window
+   */
+  private <T extends SpecificRecord> Serde<Windowed<T>> getWindowedAvroSerde(Duration windowSizeInMs) {
+
+    Serde<T> keySerde = getAvroSerde(true);
+
+    return new WindowedSerdes.TimeWindowedSerde<>(keySerde, windowSizeInMs.toMillis());
+  }
+
 
 }
 

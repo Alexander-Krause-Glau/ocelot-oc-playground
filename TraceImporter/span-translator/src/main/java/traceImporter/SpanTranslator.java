@@ -1,54 +1,65 @@
 package traceImporter;
 
 import com.google.common.io.BaseEncoding;
-import com.google.protobuf.InvalidProtocolBufferException;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import io.opencensus.proto.dump.DumpSpans;
 import io.opencensus.proto.trace.v1.AttributeValue;
 import io.opencensus.proto.trace.v1.Span;
+import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.common.serialization.Serdes.StringSerde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.Produced;
 
 /**
  * Translates opencensus {@link Span} objects to {@link EVSpan}s.
  */
 public class SpanTranslator {
 
-  private static final String IN_TOPIC = "cluster-dump-spans";
-  private static final String OUT_TOPIC = "explorviz-spans";
+
 
   private final Properties streamsConfig = new Properties();
 
-  public SpanTranslator() {
+  private Topology topology;
 
-    streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9091");
-    streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "span-translating");
+  private final SchemaRegistryClient registry;
 
-    streamsConfig.put("schema.registry.url", "http://localhost:8081");
+  public SpanTranslator(SchemaRegistryClient registry) {
 
-    streamsConfig.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, StringSerde.class);
-    streamsConfig.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class);
+    this.registry = registry;
+    streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaConfig.BROKER);
+    streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, KafkaConfig.APPLICATION_ID);
+
+    buildTopology();
+  }
+
+  public Topology getTopology() {
+    return topology;
   }
 
 
-  public void run() {
+  private void buildTopology() {
     StreamsBuilder builder = new StreamsBuilder();
 
     // Stream 1
 
     KStream<byte[], byte[]> dumpSpanStream =
-        builder.stream(IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray()));
+        builder.stream(KafkaConfig.IN_TOPIC, Consumed.with(Serdes.ByteArray(), Serdes.ByteArray()));
+
     KStream<String, EVSpan> traceIdSpanStream = dumpSpanStream.flatMap((key, value) -> {
 
       DumpSpans dumpSpan;
@@ -64,11 +75,17 @@ public class SpanTranslator {
           String spanId =
               BaseEncoding.base16().lowerCase().encode(s.getSpanId().toByteArray(), 0, 8);
 
-          long startTime = Duration
-              .ofSeconds(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toMillis();
+
+          long startTime =
+              Instant.ofEpochSecond(s.getStartTime().getSeconds(), s.getStartTime().getNanos()).toEpochMilli();
+
           long endTime =
-              Duration.ofSeconds(s.getEndTime().getSeconds(), s.getEndTime().getNanos()).toMillis();
+              Instant.ofEpochSecond(s.getEndTime().getSeconds(), s.getEndTime().getNanos()).toEpochMilli();
+
+
           long duration = endTime - startTime;
+
+
 
           // System.out.println(startTime + " und " + s.getStartTime().getSeconds());
 
@@ -84,11 +101,14 @@ public class SpanTranslator {
           String hostname = attributes.get("host").getStringValue().getValue();
           String appName = attributes.get("application_name").getStringValue().getValue();
 
-          result.add(KeyValue.pair(traceId, new EVSpan(spanId, traceId, startTime, endTime,
-              duration, operationName, 1, hostname, appName)));
+
+          EVSpan span = new EVSpan(spanId, traceId, startTime, endTime, duration, operationName, 1,
+              hostname, appName);
+
+          result.add(KeyValue.pair(traceId, span));
         }
 
-      } catch (InvalidProtocolBufferException e) {
+      } catch (IOException e) {
         e.printStackTrace();
       }
 
@@ -97,8 +117,22 @@ public class SpanTranslator {
 
     });
 
-    traceIdSpanStream.to(OUT_TOPIC);
-    final KafkaStreams streams = new KafkaStreams(builder.build(), streamsConfig);
+    traceIdSpanStream.to(KafkaConfig.OUT_TOPIC, Produced.with(Serdes.String(), getValueSerde()));
+
+    this.topology = builder.build();
+  }
+
+  private <T extends SpecificRecord> SpecificAvroSerde<T> getValueSerde() {
+    final SpecificAvroSerde<T> valueSerde = new SpecificAvroSerde<>(registry);
+    valueSerde.configure(
+        Map.of(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, "http://localhost:8081"),
+        false);
+    return valueSerde;
+  }
+
+  public void run() {
+
+    final KafkaStreams streams = new KafkaStreams(this.topology, streamsConfig);
     streams.cleanUp();
     streams.start();
 
