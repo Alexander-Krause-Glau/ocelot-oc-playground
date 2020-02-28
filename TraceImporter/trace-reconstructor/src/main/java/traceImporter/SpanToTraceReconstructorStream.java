@@ -109,7 +109,7 @@ public class SpanToTraceReconstructorStream {
     final KStream<Windowed<EVSpanKey>, Trace> traceIdSpanStream =
         traceStream.flatMap((key, trace) -> {
 
-          System.out.println("key 1: " + key.window().endTime());
+          System.out.println("window 1: " + key.window());
 
           final List<KeyValue<Windowed<EVSpanKey>, Trace>> result = new LinkedList<>();
 
