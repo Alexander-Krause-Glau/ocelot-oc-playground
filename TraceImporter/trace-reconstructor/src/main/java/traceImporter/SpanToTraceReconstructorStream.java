@@ -108,7 +108,7 @@ public class SpanToTraceReconstructorStream {
     // Map traces to a new key that resembles all included spans
     final KStream<Windowed<EVSpanKey>, Trace> traceIdSpanStream = traceStream.flatMap((key, trace) -> {
 
-      System.out.println("key: " + key.window().startTime());
+      System.out.println("key 1: " + key.window().endTime());
 
       final List<KeyValue<Windowed<EVSpanKey>, Trace>> result = new LinkedList<>();
 
@@ -132,7 +132,9 @@ public class SpanToTraceReconstructorStream {
     final KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable = traceIdSpanStream
         .groupByKey(Grouped.with(getWindowedAvroSerde(), getAvroSerde(false)))
         .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
-
+          
+          System.out.println("key 2 start time: " + sharedTraceKey.window().startTime());
+          System.out.println("key 2 end time: " + sharedTraceKey.window().endTime());
 
           if (reducedTrace.getTraceId() == null) {
             reducedTrace = trace;
@@ -155,6 +157,9 @@ public class SpanToTraceReconstructorStream {
     final KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
 
     final KStream<String, Trace> reducedIdTraceStream = reducedTraceStream.flatMap((key, value) -> {
+      
+      System.out.println("key 3 start time: " + key.window().startTime());
+      System.out.println("key 3 end time: " + key.window().endTime());
 
       final List<KeyValue<String, Trace>> result = new LinkedList<>();
 
