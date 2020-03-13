@@ -10,6 +10,7 @@ import org.apache.kafka.streams.*;
 import org.apache.kafka.streams.kstream.*;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 
 /**
@@ -25,7 +26,7 @@ public class SpanToTraceReconstructorStream {
 
   private final Topology topology;
 
-  private final SchemaRegistryClient registryClient;  
+  private final SchemaRegistryClient registryClient;
 
   public SpanToTraceReconstructorStream(final SchemaRegistryClient schemaRegistryClient) {
 
@@ -52,24 +53,25 @@ public class SpanToTraceReconstructorStream {
         Consumed.with(Serdes.String(), this.getAvroSerde(false)));
 
     // Window spans in 4s intervals with 2s grace period
-    final TimeWindowedKStream<String, EVSpan> windowedEvStream = explSpanStream.groupByKey()
-        .windowedBy(TimeWindows.of(WINDOW_SIZE).grace(GRACE_PERIOD));
+    final TimeWindowedKStream<String, EVSpan> windowedEvStream =
+        explSpanStream.groupByKey().windowedBy(TimeWindows.of(WINDOW_SIZE).grace(GRACE_PERIOD));
 
     // Aggregate Spans to traces and deduplicate similar spans of a trace
     final KTable<Windowed<String>, Trace> traceTable =
         windowedEvStream.aggregate(Trace::new, (traceId, evSpan, trace) -> {
 
           // Initialize Span according to first span of the trace
-          final long evSpanStartTime = evSpan.getStartTime();
           final long evSpanEndTime = evSpan.getEndTime();
           if (trace.getSpanList() == null) {
             trace.setSpanList(new ArrayList<>());
             trace.getSpanList().add(evSpan);
 
-            trace.setStartTime(evSpanStartTime);
+            trace.setStartTime(evSpan.getStartTime());
             trace.setEndTime(evSpanEndTime);
             trace.setOverallRequestCount(1);
-            trace.setDuration(evSpanEndTime - evSpanStartTime);
+            trace.setDuration(Duration
+                .between(tsToInstant(trace.getStartTime()), Instant.ofEpochMilli(evSpanEndTime))
+                .toNanos());
 
             trace.setTraceCount(1);
 
@@ -86,18 +88,38 @@ public class SpanToTraceReconstructorStream {
 
             // Find duplicates in Trace (via fqn), aggregate based on request count
             // Furthermore, potentially update trace values
-            trace.getSpanList().stream()
+            trace
+                .getSpanList()
+                .stream()
                 .filter(s -> s.getOperationName().contentEquals(evSpan.getOperationName()))
-                .findAny().ifPresentOrElse(s -> {
+                .findAny()
+                .ifPresentOrElse(s -> {
                   s.setRequestCount(s.getRequestCount() + 1);
-                  s.setStartTime(Math.min(s.getStartTime(), evSpan.getStartTime()));
+
+                  if (tsToInstant(evSpan.getStartTime()).isBefore(tsToInstant(s.getStartTime()))) {
+                    s.setStartTime(evSpan.getStartTime());
+                  }
+
                   s.setEndTime(Math.max(s.getEndTime(), evSpan.getEndTime()));
                 }, () -> trace.getSpanList().add(evSpan));
-            trace.getSpanList().stream().mapToLong(EVSpan::getStartTime).min()
-                .ifPresent(trace::setStartTime);
-            trace.getSpanList().stream().mapToLong(EVSpan::getEndTime).max()
+            trace
+                .getSpanList()
+                .stream()
+                .map(s -> Instant.ofEpochSecond(s.getStartTime().getSeconds(),
+                    s.getStartTime().getNanoAdjust()))
+                .min(Instant::compareTo)
+                .ifPresent(s -> trace.setStartTime(new Timestamp(s.getEpochSecond(), s.getNano())));
+            trace
+                .getSpanList()
+                .stream()
+                .mapToLong(EVSpan::getEndTime)
+                .max()
                 .ifPresent(trace::setEndTime);
-            trace.setDuration(trace.getEndTime() - trace.getStartTime());
+            long duration = Duration
+                .between(Instant.ofEpochMilli(trace.getEndTime()),
+                    tsToInstant(trace.getStartTime()))
+                .toNanos();
+            trace.setDuration(duration);
 
 
           }
@@ -130,27 +152,41 @@ public class SpanToTraceReconstructorStream {
 
 
     // Reduce similar Traces of one window to a single Trace
-    final KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable =
-        traceIdSpanStream.groupByKey(Grouped.with(getWindowedAvroSerde(WINDOW_SIZE), getAvroSerde(false)))
-            .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
+    final KTable<Windowed<EVSpanKey>, Trace> reducedTraceTable = traceIdSpanStream
+        .groupByKey(Grouped.with(getWindowedAvroSerde(WINDOW_SIZE), getAvroSerde(false)))
+        .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
 
-              if (reducedTrace.getTraceId() == null) {
-                reducedTrace = trace;
-              } else {
-                reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
-                // Use the Span list of the latest trace in the group
-                // Do so since span list only grow but never loose elements
-                reducedTrace.setSpanList(trace.getSpanList());
 
-                // Update start and end time of the trace
+          System.out.println("KEY:" + sharedTraceKey);
 
-                reducedTrace
-                    .setStartTime(Math.min(trace.getStartTime(), reducedTrace.getStartTime()));
-                reducedTrace.setEndTime(Math.max(trace.getEndTime(), reducedTrace.getEndTime()));
-              }
+          if (reducedTrace.getTraceId() == null) {
+            System.out.println("New aggregate");
+            reducedTrace = trace;
+          } else {
+            reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
+            // Use the Span list of the latest trace in the group
+            // Do so since span list only grow but never loose elements
+            reducedTrace.setSpanList(trace.getSpanList());
 
-              return reducedTrace;
-            }, Materialized.with(this.getWindowedAvroSerde(WINDOW_SIZE), this.getAvroSerde(false)));
+
+            // Update start and end time of the trace
+
+            if (tsToInstant(trace.getStartTime()).isBefore(
+                tsToInstant(reducedTrace.getStartTime()))) {
+
+              System.out.println(trace.getStartTime() + " BEFORE " + reducedTrace.getStartTime());
+
+              reducedTrace.setStartTime(trace.getStartTime());
+            } else {
+              System.out.println(trace.getStartTime() + " AFTER " + reducedTrace.getStartTime());
+            }
+
+
+            reducedTrace.setEndTime(Math.max(trace.getEndTime(), reducedTrace.getEndTime()));
+          }
+
+          return reducedTrace;
+        }, Materialized.with(this.getWindowedAvroSerde(WINDOW_SIZE), this.getAvroSerde(false)));
     // .suppress(Suppressed.untilWindowCloses(Suppressed.BufferConfig.unbounded()));
 
     final KStream<Windowed<EVSpanKey>, Trace> reducedTraceStream = reducedTraceTable.toStream();
@@ -168,16 +204,23 @@ public class SpanToTraceReconstructorStream {
       final List<EVSpan> list = trace.getSpanList();
       System.out.println("Trace with id " + trace.getTraceId());
       list.forEach((val) -> {
-        System.out.println(val.getStartTime() + " : " + val.getEndTime() + " für "
-            + val.getOperationName() + " mit Anzahl " + val.getRequestCount());
+        System.out.println(
+            val.getStartTime() + " : " + val.getEndTime() + " für " + val.getOperationName()
+                + " mit Anzahl " + val.getRequestCount());
       });
 
     });
 
 
+
     // Sort spans in each trace based of start time
-    reducedIdTraceStream.peek(
-        (key, trace) -> trace.getSpanList().sort(Comparator.comparingLong(EVSpan::getStartTime)));
+    reducedIdTraceStream.peek((key, trace) -> trace.getSpanList().sort((s1, s2) -> {
+      Instant instant1 =
+          Instant.ofEpochSecond(s1.getStartTime().getSeconds(), s1.getStartTime().getNanoAdjust());
+      Instant instant2 =
+          Instant.ofEpochSecond(s2.getStartTime().getSeconds(), s2.getStartTime().getNanoAdjust());
+      return instant1.compareTo(instant2);
+    }));
 
     // TODO implement count attribute in Trace -> number of similar traces
     // TODO Reduce traceIdAndAllTracesStream to similiar traces stream (map and reduce)
@@ -200,7 +243,7 @@ public class SpanToTraceReconstructorStream {
 
   /**
    * Creates a {@link Serde} for specific avro records using the {@link SpecificAvroSerde}
-   * 
+   *
    * @param forKey {@code true} if the Serde is for keys, {@code false} otherwise
    * @param <T> type of the avro record
    * @return a Serde
@@ -216,15 +259,20 @@ public class SpanToTraceReconstructorStream {
 
   /**
    * Creates a new Serde for windowed keys of specific avro records
-   * 
+   *
    * @param <T> avro record data type
    * @return a {@link Serde} for specific avro records wrapped in a time window
    */
-  private <T extends SpecificRecord> Serde<Windowed<T>> getWindowedAvroSerde(Duration windowSizeInMs) {
+  private <T extends SpecificRecord> Serde<Windowed<T>> getWindowedAvroSerde(
+      Duration windowSizeInMs) {
 
     Serde<T> keySerde = getAvroSerde(true);
 
     return new WindowedSerdes.TimeWindowedSerde<>(keySerde, windowSizeInMs.toMillis());
+  }
+
+  private Instant tsToInstant(Timestamp ts) {
+    return Instant.ofEpochSecond(ts.getSeconds(), ts.getNanoAdjust());
   }
 
 

@@ -9,7 +9,20 @@
     },
     {
       "name": "startTime",
-      "type": "long"
+      "type": {
+        "type": "record",
+        "name": "Timestamp",
+        "fields": [
+          {
+            "name": "seconds",
+            "type": "long"
+          },
+          {
+            "name": "nanoAdjust",
+            "type": "int"
+          }
+        ]
+      }
     },
     {
       "name": "endTime",
@@ -45,7 +58,7 @@
             },
             {
               "name": "startTime",
-              "type": "long"
+              "type": "traceImporter.Timestamp"
             },
             {
               "name": "endTime",
