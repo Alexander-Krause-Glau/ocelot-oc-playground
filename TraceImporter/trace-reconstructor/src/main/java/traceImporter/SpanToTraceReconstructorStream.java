@@ -105,8 +105,7 @@ public class SpanToTraceReconstructorStream {
             trace
                 .getSpanList()
                 .stream()
-                .map(s -> Instant.ofEpochSecond(s.getStartTime().getSeconds(),
-                    s.getStartTime().getNanoAdjust()))
+                .map(s -> tsToInstant(s.getStartTime()))
                 .min(Instant::compareTo)
                 .ifPresent(s -> trace.setStartTime(new Timestamp(s.getEpochSecond(), s.getNano())));
             trace
@@ -116,8 +115,8 @@ public class SpanToTraceReconstructorStream {
                 .max()
                 .ifPresent(trace::setEndTime);
             long duration = Duration
-                .between(Instant.ofEpochMilli(trace.getEndTime()),
-                    tsToInstant(trace.getStartTime()))
+                .between(tsToInstant(trace.getStartTime()),
+                    Instant.ofEpochMilli(trace.getEndTime()))
                 .toNanos();
             trace.setDuration(duration);
 
@@ -157,10 +156,7 @@ public class SpanToTraceReconstructorStream {
         .aggregate(Trace::new, (sharedTraceKey, trace, reducedTrace) -> {
 
 
-          System.out.println("KEY:" + sharedTraceKey);
-
           if (reducedTrace.getTraceId() == null) {
-            System.out.println("New aggregate");
             reducedTrace = trace;
           } else {
             reducedTrace.setTraceCount(reducedTrace.getTraceCount() + 1);
@@ -168,17 +164,11 @@ public class SpanToTraceReconstructorStream {
             // Do so since span list only grow but never loose elements
             reducedTrace.setSpanList(trace.getSpanList());
 
-
             // Update start and end time of the trace
 
             if (tsToInstant(trace.getStartTime()).isBefore(
                 tsToInstant(reducedTrace.getStartTime()))) {
-
-              System.out.println(trace.getStartTime() + " BEFORE " + reducedTrace.getStartTime());
-
               reducedTrace.setStartTime(trace.getStartTime());
-            } else {
-              System.out.println(trace.getStartTime() + " AFTER " + reducedTrace.getStartTime());
             }
 
 
@@ -205,7 +195,7 @@ public class SpanToTraceReconstructorStream {
       System.out.println("Trace with id " + trace.getTraceId());
       list.forEach((val) -> {
         System.out.println(
-            val.getStartTime() + " : " + val.getEndTime() + " für " + val.getOperationName()
+            tsToInstant(val.getStartTime()).toEpochMilli() + " : " + val.getEndTime() + " für " + val.getOperationName()
                 + " mit Anzahl " + val.getRequestCount());
       });
 
@@ -215,10 +205,8 @@ public class SpanToTraceReconstructorStream {
 
     // Sort spans in each trace based of start time
     reducedIdTraceStream.peek((key, trace) -> trace.getSpanList().sort((s1, s2) -> {
-      Instant instant1 =
-          Instant.ofEpochSecond(s1.getStartTime().getSeconds(), s1.getStartTime().getNanoAdjust());
-      Instant instant2 =
-          Instant.ofEpochSecond(s2.getStartTime().getSeconds(), s2.getStartTime().getNanoAdjust());
+      Instant instant1 = tsToInstant(s1.getStartTime());
+      Instant instant2 = tsToInstant(s2.getStartTime());
       return instant1.compareTo(instant2);
     }));
 

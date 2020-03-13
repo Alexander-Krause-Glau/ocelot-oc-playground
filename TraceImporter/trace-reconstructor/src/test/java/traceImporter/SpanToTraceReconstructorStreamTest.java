@@ -44,11 +44,9 @@ class SpanToTraceReconstructorStreamTest {
     mockSRC.register(KafkaConfig.OUT_TOPIC + "-value", Trace.SCHEMA$);
     mockSRC.register(KafkaConfig.IN_TOPIC + "-key", EVSpanKey.SCHEMA$);
     mockSRC.register(KafkaConfig.IN_TOPIC + "-value", EVSpan.SCHEMA$);
-    // mockSRC.register("STREAM-AGGREGATE-STATE-STORE-0000000005-repartition-key",
-    // EVSpanKey.SCHEMA$);
+
 
     final Topology topo = new SpanToTraceReconstructorStream(mockSRC).getTopology();
-    System.out.println(topo.describe().toString());
 
     final Serializer<EVSpan> evSpanSerializer = new SpecificAvroSerde<EVSpan>(mockSRC).serializer();
     final Deserializer<Trace> traceDeserializer =
