@@ -1,0 +1,27 @@
+{
+  "namespace": "traceImporter",
+  "type": "record",
+  "name": "ApplicationComponent",
+  "fields": [
+    {
+      "name": "host",
+      "type": "string"
+    },
+    {
+      "name": "application",
+      "type": "string"
+    },
+    {
+      "name": "package",
+      "type": "string"
+    },
+    {
+      "name": "class",
+      "type": "string"
+    },
+    {
+      "name": "method",
+      "type": "string"
+    }
+  ]
+}

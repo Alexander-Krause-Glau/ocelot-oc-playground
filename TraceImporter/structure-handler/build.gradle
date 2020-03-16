@@ -1,0 +1,19 @@
+plugins {
+    id 'java'
+    id "com.commercehub.gradle.plugin.avro" version "0.9.1"
+}
+
+
+sourceCompatibility = 1.11
+
+sourceSets.main.java.srcDirs = ['build/generated-main-avro-java','src/main/java']
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+
+    implementation group: 'org.apache.kafka', name: 'kafka-streams', version: '2.4.0'
+
+}

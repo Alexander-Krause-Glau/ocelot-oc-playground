@@ -30,8 +30,6 @@ import org.apache.kafka.streams.kstream.Produced;
  */
 public class SpanTranslator {
 
-
-
   private final Properties streamsConfig = new Properties();
 
   private Topology topology;

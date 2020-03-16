@@ -29,7 +29,7 @@ import org.apache.kafka.streams.processor.TimestampExtractor;
  * Collects spans for 10 seconds, grouped by the trace id, and forwards the resulting batch to the
  * topic 'span-batches'
  */
-public class SpanToTraceReconstructorStream {
+public class SpanToTraceReconstructorStream extends Thread{
 
 
   private final Properties streamsConfig = new Properties();

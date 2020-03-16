@@ -11,3 +11,5 @@ rootProject.name = 'TraceImporter'
 include ':trace-reconstructor'
 include ':span-translator'
 include ':trace-consumer'
+include ':structure-handler'
+
