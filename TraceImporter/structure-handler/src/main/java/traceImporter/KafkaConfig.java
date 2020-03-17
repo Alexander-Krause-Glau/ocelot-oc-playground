@@ -11,6 +11,8 @@ public class KafkaConfig {
   // Topic to read from
   public static final String IN_TOPIC = "explorviz-traces";
 
+  public static final String OUT_TOPIC = "explorviz-landscape-components";
+
   public static final String REGISTRY_URL = "http://localhost:8081";
 
 }

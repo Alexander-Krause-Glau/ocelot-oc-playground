@@ -11,12 +11,13 @@ import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.Produced;
 
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Properties;
 
-public class StructureExtractor extends Thread {
+public class ComponentExtractor extends Thread {
 
 
   private final Properties streamsConfig = new Properties();
@@ -25,7 +26,7 @@ public class StructureExtractor extends Thread {
 
   private final SchemaRegistryClient registry;
 
-  public StructureExtractor(SchemaRegistryClient registry) {
+  public ComponentExtractor(SchemaRegistryClient registry) {
 
     this.registry = registry;
     streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaConfig.BROKER);
@@ -87,6 +88,8 @@ public class StructureExtractor extends Thread {
 
     componentStream.peek((k, c) -> System.out.println(c));
 
+    // TODO: Another Key?
+    componentStream.to(KafkaConfig.OUT_TOPIC, Produced.with(Serdes.String(), getAvroValueSerde()));
     return builder.build();
   }
 
