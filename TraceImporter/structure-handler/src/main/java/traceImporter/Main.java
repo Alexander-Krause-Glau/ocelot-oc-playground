@@ -12,7 +12,8 @@ public class Main {
     // TODO set reasonable value
     SchemaRegistryClient src = new CachedSchemaRegistryClient(KafkaConfig.REGISTRY_URL, 20);
 
-    new ComponentExtractor(src).start();
+    new ComponentExtractor(src).run();
+    new LandscapeBuilder(src).run();
   }
 
 }

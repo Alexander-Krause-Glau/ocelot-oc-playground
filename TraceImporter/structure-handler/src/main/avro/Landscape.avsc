@@ -1,0 +1,76 @@
+{
+  "namespace":"landscape",
+  "type":"record",
+  "name":"Landscape",
+  "fields":[
+    {
+      "name": "nodes",
+      "type": {
+        "type": "array",
+        "items": {
+          "name":"Node",
+          "type":"record",
+          "fields":[
+            {
+              "name":"ipAddress",
+              "type":"string"
+            },
+            {
+              "name":"hostName",
+              "type":"string"
+            },
+            {
+              "name": "applications",
+              "type": {
+                "type": "array",
+                "items": {
+                  "name": "Application",
+                  "type":"record",
+                  "fields":[
+                    {
+                      "name":"name",
+                      "type":"string"
+                    },
+                    {
+                      "name":"language",
+                      "type":"string",
+                      "default":"java"
+                    },
+                    {
+                      "name":"components",
+                      "type":{
+                        "type": "array",
+                        "items":{
+                          "name":"Component",
+                          "type":"record",
+                          "fields": [
+                            {
+                              "name": "children",
+                              "type": {
+                                "type": "array",
+                                "items": "Component"
+                              }
+                            },
+                            {
+                              "name": "classes",
+                              "type": {
+                                "type": "array",
+                                "items": "string"
+                              }
+                            },
+                            {"name": "name", "type": "string"}
+                          ]
+                        }
+                      }
+                    }
+                  ]
+
+               }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

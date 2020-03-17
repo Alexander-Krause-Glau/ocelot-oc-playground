@@ -46,7 +46,7 @@ public class ComponentExtractor extends Thread {
     // Stream 1
 
     KStream<String, Trace> traceStream =
-            builder.stream(KafkaConfig.IN_TOPIC, Consumed.with(Serdes.String(), getAvroValueSerde()));
+            builder.stream(KafkaConfig.TOPIC_TRACES, Consumed.with(Serdes.String(), getAvroValueSerde()));
 
     KStream<String, LandscapeComponent> componentStream = traceStream.flatMapValues(Trace::getSpanList)
             .mapValues(s -> {
@@ -89,7 +89,7 @@ public class ComponentExtractor extends Thread {
     componentStream.peek((k, c) -> System.out.println(c));
 
     // TODO: Another Key?
-    componentStream.to(KafkaConfig.OUT_TOPIC, Produced.with(Serdes.String(), getAvroValueSerde()));
+    componentStream.to(KafkaConfig.TOPIC_COMPONENTS, Produced.with(Serdes.String(), getAvroValueSerde()));
     return builder.build();
   }
 
