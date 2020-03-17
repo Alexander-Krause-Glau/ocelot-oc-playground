@@ -47,12 +47,15 @@ public class StructureExtractor extends Thread {
     KStream<String, Trace> traceStream =
             builder.stream(KafkaConfig.IN_TOPIC, Consumed.with(Serdes.String(), getAvroValueSerde()));
 
-    KStream<String, ApplicationComponent> componentStream = traceStream.flatMapValues(Trace::getSpanList)
+    KStream<String, LandscapeComponent> componentStream = traceStream.flatMapValues(Trace::getSpanList)
             .mapValues(s -> {
-              ApplicationComponent.Builder b = ApplicationComponent.newBuilder();
+              LandscapeComponent.Builder b = LandscapeComponent.newBuilder();
 
-              b.setHost(s.getHostname());
-              b.setApplication(s.getAppName());
+              Node node = new Node("todo", s.getHostname());
+              b.setNode(node);
+
+              Application app = Application.newBuilder().setName(s.getAppName()).build();
+              b.setApplication(app);
 
               /*
                 By definition: getOperationName().split(".")
@@ -78,13 +81,11 @@ public class StructureExtractor extends Thread {
                 b.setClass$(className);
                 b.setMethod(methodName);
 
-                System.out.println(b.build());
-
               }
               return b.build();
             });
 
-    componentStream.peek(($, c) -> System.out.println(c));
+    componentStream.peek((k, c) -> System.out.println(c));
 
     return builder.build();
   }

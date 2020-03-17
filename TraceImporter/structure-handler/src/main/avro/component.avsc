@@ -1,15 +1,29 @@
 {
   "namespace": "traceImporter",
   "type": "record",
-  "name": "ApplicationComponent",
+  "name": "LandscapeComponent",
   "fields": [
     {
-      "name": "host",
-      "type": "string"
+      "name": "node",
+      "type": {
+        "name": "Node",
+        "type": "record",
+        "fields": [
+          {"name": "ipAddress", "type": "string"},
+          {"name": "hostName", "type": "string"}
+        ]
+      }
     },
     {
       "name": "application",
-      "type": "string"
+      "type": {
+        "name": "Application",
+        "type": "record",
+        "fields": [
+          {"name": "name", "type": "string"},
+          {"name": "language", "type": "string", "default": "java"}
+        ]
+      }
     },
     {
       "name": "package",
