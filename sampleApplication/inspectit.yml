@@ -17,25 +17,39 @@ inspectit:
         tracing:
             start-span: true
             attributes:
-              monitoring_id: monitoring_id_attr
-              host: host_name_attr
+
+              landscape_token: landscape_token_attr
+              application_name: application_name_attr
+              application_language: application_language_attr
+
+              application_pid: application_pid_attr
+              host_name: host_name_attr
+              host_ip: host_ip_attr
               method_fqn: method_fqn_attr
-              application_name: appname_attr
         entry:
-          host_name_attr:
-           action: get_host_name
-          method_fqn_attr:
-            action: get_method_fqn
-          appname_attr:
+          landscape_token_attr:
             action: set
             constant-input:
-              value: "UNKNOWN-APPLICATION"
-          monitoring_id_attr:
-            action: create_or_get_UUID
+              value: "landscape-token"
+          application_name_attr:
+            action: set
+            constant-input:
+              value: "application_name"
+          application_language_attr:
+            action: set
+            constant-input:
+              value: "application_language"
+          host_name_attr:
+           action: get_host_name
+          host_ip_attr:
+           action: get_host_ip
+          method_fqn_attr:
+            action: get_method_fqn
+          application_pid_attr:
+            action: get_PID
 
     actions:
-
-      #computes a nanosecond-timestamp as a long for the current point in time
+      # Returns the name of the host
       get_host_name:
         imports:
           - java.net.InetAddress
@@ -43,13 +57,25 @@ inspectit:
           InetAddress ip = InetAddress.getLocalHost();
           return ip.getHostName();
 
+      # Returns the IP address of the local adapter
+      get_host_ip:
+        imports:
+          - java.net.InetAddress
+        value-body: |
+          InetAddress ip = InetAddress.getLocalHost();
+          return ip.getHostAddress();
+
+      # Returns the FQN of the called method, delimited with dots. 
       get_method_fqn:
         input:
           _methodName: String
           _class: Class
         value: "new StringBuilder(_class.getName()).append('.').append(_methodName).toString()"
 
-      create_or_get_UUID:
+      # Returns the PID or something equivalent, depending on the JVM and the OS
+      # Not guaranteed to be the actual PID, see https://stackoverflow.com/questions/35842/how-can-a-java-program-get-its-own-process-id
+      # Java 9+ can use ProcessHandle.current().pid() to resolve PID
+      get_PID:
         imports:
           - java.lang.management.ManagementFactory
         input:
@@ -63,8 +89,6 @@ inspectit:
   exporters:
     tracing:
       open-census-agent:
-        address: "localhost:55678"
+        address: "localhost:55680"
         service-name: "Alex sein Test - OpenCensus"
         use-insecure: true
-      zipkin:
-        url: http://127.0.0.1:9411/api/v2/spans
